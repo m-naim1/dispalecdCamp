@@ -18,7 +18,7 @@ def create_family(db: Session, family_in: FamilyCreate) -> Family:
     if existing_head:
         raise ConflictError(
             code="member_already_exists",
-            message="Member with the {family_in.head_id} already exists in another family.",
+            message=f"Member with the {family_in.head_id} already exists in another family.",
         )
 
     db_members = []
@@ -28,7 +28,7 @@ def create_family(db: Session, family_in: FamilyCreate) -> Family:
         if db.query(Member).filter(Member.id == member_data.id).first():
             raise ConflictError(
                 code="member_already_exists",
-                message="Member with the {member_data.id} already exists in another family.",
+                message=f"Member with the {member_data.id} already exists in another family.",
             )
         
         db_member = Member(**member_data.model_dump())
@@ -60,7 +60,7 @@ def get_family(db: Session, family_id: int) -> Family:
     family = db.query(Family).filter(Family.id == family_id).first()
     if not family:
         raise NotFoundError(
-            code="Family_not_Found", message="Family with id {family_id} not found"
+            code="Family_not_Found", message=f"Family with id {family_id} not found"
         )
     return family
 
@@ -84,7 +84,7 @@ def update_family(db: Session, family_id: int, family_data: FamilyUpdate) -> Fam
     family = db.query(Family).filter(Family.id == family_id).first()
     if not family:
         raise NotFoundError(
-            code="Family_not_Found", message="Family with id {family_id} not found"
+            code="Family_not_Found", message=f"Family with id {family_id} not found"
         )
 
     update_data = family_data.model_dump(exclude_unset=True)
@@ -105,12 +105,12 @@ def deactivate_family(db: Session, family_id: int) -> Family:
     family = db.query(Family).filter(Family.id == family_id).first()
     if not family:
         raise NotFoundError(
-            code="Family_not_Found", message="Family with id {family_id} not found"
+            code="Family_not_Found", message=f"Family with id {family_id} not found"
         )
     if not family.is_active:
         raise DomainError(
             code="Family_already_archived",
-            message="Family with id {family_id} already archived",
+            message=f"Family with id {family_id} already archived",
         )
     family.is_active = False
     family.archived_at = datetime.now()
@@ -128,12 +128,12 @@ def activate_family(db: Session, family_id: int) -> Family:
     family = db.query(Family).filter(Family.id == family_id).first()
     if not family:
         raise NotFoundError(
-            code="Family_not_Found", message="Family with id {family_id} not found"
+            code="Family_not_Found", message=f"Family with id {family_id} not found"
         )
     if family.is_active:
         raise DomainError(
             code="Family_already_activated",
-            message="Family with id {family_id} already activated",
+            message=f"Family with id {family_id} already activated",
         )
     family.is_active = True
     family.archived_at = None  # type: ignore
@@ -151,14 +151,14 @@ def add_member(db: Session, family_id: int, member_in: MemberCreate) -> Member:
     family = db.query(Family).filter(Family.id == family_id).first()
     if not family:
         raise NotFoundError(
-            code="Family_not_Found", message="Family with id {family_id} not found"
+            code="Family_not_Found", message=f"Family with id {family_id} not found"
         )
 
     # Check for duplicate member ID across all families
     if db.query(Member).filter(Member.id == member_in.id).first():
         raise ConflictError(
             code="member_already_exists",
-            message="Member with the {member_data.id} already exists in another family.",
+            message=f"Member with the {member_in.id} already exists in another family.",
         )
 
     # Create and add the new member
@@ -177,7 +177,7 @@ def update_member(db: Session, member_id: int, member_in: MemberUpdate):
     member = db.query(Member).filter(Member.id == member_id).first()
     if not member:
         raise NotFoundError(
-            code="Member_not_Found", message="Member with id {member_id} not found"
+            code="Member_not_Found", message=f"Member with id {member_id} not found"
         )
     # validate updateting Gender and pregnancy status
     if member_in.pregnant is not None:
@@ -206,7 +206,7 @@ def delete_member(db: Session, member_id: int):
     member = db.query(Member).filter(Member.id == member_id).first()
     if not member:
         raise NotFoundError(
-            code="Member_not_Found", message="Member with id {member_id} not found"
+            code="Member_not_Found", message=f"Member with id {member_id} not found"
         )
 
     db.delete(member)
@@ -221,7 +221,7 @@ def delete_member(db: Session, member_id: int):
 #     family = db.query(Family).filter(Family.id == family_id).first()
 #     if not family:
 #         raise NotFoundError(
-#             code="Family_not_Found", message="Family with id {family_id} not found"
+#             code="Family_not_Found", message=f"Family with id {family_id} not found"
 #         )
 
 #     # Fetch all members freshly from DB

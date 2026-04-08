@@ -45,9 +45,10 @@ def read_family(family_id: int, db: Session = Depends(get_db)):
     """
     Get a specific family by ID to see the calculated stats and members.
     """
-    family = db.query(FamilyModel).filter(FamilyModel.id == family_id).first()
-    if not family:
-        raise HTTPException(status_code=404, detail="Family not found")
+    try:
+        family = family_service.get_family(db=db, family_id=family_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
     return family
 
 
@@ -155,10 +156,9 @@ def remove_member(member_id: int, db: Session = Depends(get_db)):
     Permanently remove a member from the family.
     Automatically recalculates family statistics.
     """
-    db_member = db.query(MemberModel).filter(MemberModel.id == member_id).first()
-    if not db_member:
-        raise HTTPException(status_code=404, detail="Member not found")
+    try:
+        family_service.delete_member(db=db, member_id=member_id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
 
-    db.delete(db_member)
-    db.commit()
     return None
