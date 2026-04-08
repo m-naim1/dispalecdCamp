@@ -25,6 +25,7 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models.family import Family, Member
+from app.models.user import User
 from app.models.lookups import City, Governor, RelationshipToHead, ShelterQuality, ShelterBlock, ShelterCenter
 from app.db.session import Base
 # target_metadata = mymodel.Base.metadata

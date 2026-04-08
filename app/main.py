@@ -5,6 +5,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import Base, engine
 from app.models.family import Family, Member
+from app.models.user import User
 from app.models.lookups import City, Governor, RelationshipToHead, ShelterQuality, ShelterBlock, ShelterCenter
 # Import models to ensure tables are created
 # from app.models import family
@@ -16,6 +17,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.PROJECT_NAME)
 
 admin = Admin(engine=engine, title="Displaced Camp Admin")
+admin.add_view(ModelView(User))
 admin.add_view(ModelView(Family))
 admin.add_view(ModelView(Member))
 admin.add_view(ModelView(Governor))
