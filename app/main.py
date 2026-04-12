@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from starlette_admin.contrib.sqla import Admin, ModelView
-from app.admin import UserAdminView
+from app.admin import UserAdminView, DashboardView
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import Base, engine
@@ -27,7 +27,13 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.PROJECT_NAME)
 
-admin = Admin(engine=engine, title="Displaced Camp Admin")
+admin = Admin(engine=engine, title="Displaced Camp Admin",templates_dir="templates",          # ← tells admin where your templates folder is
+    index_view=DashboardView(
+        label="Dashboard",
+        icon="fa fa-home",
+        path="/",
+        add_to_menu=False,              # already the home page, no need to show in sidebar
+    ),)
 admin.add_view(UserAdminView(User, label="Users"))
 admin.add_view(ModelView(Family))
 admin.add_view(ModelView(Member))
