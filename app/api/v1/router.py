@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import families
+from app.api.v1.endpoints import families, auth, users
 
 api_router = APIRouter()
 
@@ -7,6 +7,7 @@ api_router = APIRouter()
 # This means the URL will be: /api/v1/families
 api_router.include_router(families.router, prefix="/families", tags=["families"])
 
-# You can keep your other routers here (auth, users, etc.)
-# api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-
+# Register the auth endpoint
+# This means the URL will be: /api/v1/auth
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(users.router, prefix="/users", tags=["users"])

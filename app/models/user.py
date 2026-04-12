@@ -20,11 +20,11 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     full_name: Mapped[str] = mapped_column(String)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, native_enum=False), default=UserRole.FAMILY, nullable=False
+        Enum(UserRole, native_enum=False), default=UserRole.MANAGER, nullable=False
     )
     # Scope Fields
     # Which block does this user manage? (Only for blockHead)
-    block_id: Mapped[int] = mapped_column(
+    block_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("shelter_block.id"), nullable=True, index=True
     )
 
@@ -43,7 +43,7 @@ class User(Base):
         if role == UserRole.BLOCK_HEAD and self.block_id is None:
             raise ValueError("BLOCK_HEAD users must have a block_id assigned")
         if role in (UserRole.SUPERADMIN, UserRole.MANAGER):
-            if self.block_id is not None or self.family_id is not None:
+            if self.block_id is not None:
                 raise ValueError(
                     "SUPERADMIN and MANAGER users should not have a scope assigned"
                 )

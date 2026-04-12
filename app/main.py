@@ -1,15 +1,26 @@
 import uvicorn
 from fastapi import FastAPI
 from starlette_admin.contrib.sqla import Admin, ModelView
+from app.admin import UserAdminView
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.session import Base, engine
 from app.models.family import Family, Member
 from app.models.user import User
-from app.models.lookups import City, Governor, RelationshipToHead, ShelterQuality, ShelterBlock, ShelterCenter
+from app.models.lookups import (
+    City,
+    Governor,
+    RelationshipToHead,
+    ShelterQuality,
+    ShelterBlock,
+    ShelterCenter,
+)
+
 # Import models to ensure tables are created
 # from app.models import family
-
+from app.db.session import SessionLocal
+from app.core.security import get_password_hash
+from app.models.enums import UserRole
 
 Base.metadata.create_all(bind=engine)
 
@@ -17,7 +28,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.PROJECT_NAME)
 
 admin = Admin(engine=engine, title="Displaced Camp Admin")
-admin.add_view(ModelView(User))
+admin.add_view(UserAdminView(User, label="Users"))
 admin.add_view(ModelView(Family))
 admin.add_view(ModelView(Member))
 admin.add_view(ModelView(Governor))
@@ -40,6 +51,28 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+def seed_superadmin():
+    db = SessionLocal()
+    try:
+        exists = db.query(User).filter(User.role == UserRole.SUPERADMIN).first()
+        if not exists:
+            admin = User(
+                username="admin",
+                email="admin@camp.local",
+                full_name="System Admin",
+                hashed_password=get_password_hash("admin1234"),
+                role=UserRole.SUPERADMIN,
+            )
+            db.add(admin)
+            db.commit()
+            print("✓ Superadmin created — username: admin / password: admin1234")
+    finally:
+        db.close()
+
+
+seed_superadmin()
 
 
 # 3. Main execution block to run the app using Uvicorn

@@ -5,9 +5,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_db, require_role
 from app.core.errors import ConflictError, NotFoundError, DomainError, ValidationError
 from app.models import family
+from app.models.enums import UserRole
 from app.models.family import Family as FamilyModel
 from app.models.family import Member as MemberModel
 from app.schemas.family import (
@@ -24,7 +25,11 @@ router = APIRouter()
 
 
 @router.post("/", response_model=FamilyResponse, status_code=status.HTTP_201_CREATED)
-def create_new_family(family_in: FamilyCreate, db: Session = Depends(get_db)):
+def create_new_family(
+    family_in: FamilyCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
+):
     """
     Create a new family with all its members.
     - Validates IDs using Luhn algorithm.
@@ -41,7 +46,11 @@ def create_new_family(family_in: FamilyCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{family_id}", response_model=FamilyResponse)
-def read_family(family_id: int, db: Session = Depends(get_db)):
+def read_family(
+    family_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER, UserRole.BLOCK_HEAD,)),
+):
     """
     Get a specific family by ID to see the calculated stats and members.
     """
@@ -58,6 +67,7 @@ def read_families(
     limit: int = 100,
     active_only: bool = True,
     db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER, UserRole.BLOCK_HEAD)),
 ):
     """
     Get list of families.
@@ -71,7 +81,10 @@ def read_families(
 
 @router.put("/{family_id}", response_model=FamilyResponse)
 def update_family_details(
-    family_id: int, family_update: FamilyUpdate, db: Session = Depends(get_db)
+    family_id: int,
+    family_update: FamilyUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
     Update family-level details (Housing, Phone, Status).
@@ -87,7 +100,11 @@ def update_family_details(
 
 
 @router.patch("/{family_id}/archive", response_model=FamilyResponse)
-def archive_family(family_id: int, db: Session = Depends(get_db)):
+def archive_family(
+    family_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
+):
     """
     Soft delete (archive) a family.
     Sets is_active = False and records the archived_at timestamp.
@@ -103,7 +120,11 @@ def archive_family(family_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{family_id}/restore", response_model=FamilyResponse)
-def restore_family(family_id: int, db: Session = Depends(get_db)):
+def restore_family(
+    family_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
+):
     """
     Restore an archived family back to active status.
     """
@@ -118,14 +139,19 @@ def restore_family(family_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{family_id}/members", response_model=MemberResponse)
 def add_member_to_family(
-    family_id: int, member_in: MemberCreate, db: Session = Depends(get_db)
+    family_id: int,
+    member_in: MemberCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
     Add a new member to an existing family.
     Automatically recalculates family statistics.
     """
     try:
-        new_member = family_service.add_member(db=db, family_id=family_id, member_in=member_in)
+        new_member = family_service.add_member(
+            db=db, family_id=family_id, member_in=member_in
+        )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     except ConflictError as e:
@@ -136,22 +162,32 @@ def add_member_to_family(
 
 @router.put("/members/{member_id}", response_model=MemberResponse)
 def update_member(
-    member_id: int, member_update: MemberUpdate, db: Session = Depends(get_db)
+    member_id: int,
+    member_update: MemberUpdate,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
     Update a specific member's details (e.g., pregnancy status, injury).
     Automatically recalculates family statistics.
     """
     try:
-        updated_member = family_service.update_member(db=db, member_id=member_id, member_in=member_update)
+        updated_member = family_service.update_member(
+            db=db, member_id=member_id, member_in=member_update
+        )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=e.message)
     return updated_member
 
+
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_member(member_id: int, db: Session = Depends(get_db)):
+def remove_member(
+    member_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
+):
     """
     Permanently remove a member from the family.
     Automatically recalculates family statistics.
