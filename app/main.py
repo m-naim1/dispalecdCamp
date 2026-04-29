@@ -1,9 +1,12 @@
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 from starlette_admin.contrib.sqla import Admin, ModelView
-from app.admin import UserAdminView, DashboardView
+from app.admin import UserAdminView, DashboardView, AdminAuthProvider
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.errors import NotFoundError, ConflictError, DomainError
 from app.db.session import Base, engine
 from app.models.family import Family, Member
 from app.models.user import User
@@ -22,15 +25,54 @@ from app.db.session import SessionLocal
 from app.core.security import get_password_hash
 from app.models.enums import UserRole
 
+# ── Startup validation ────────────────────────────────────────────────────────
+if settings.SECRET_KEY == "change-me":
+    import warnings
+
+    warnings.warn(
+        "⚠️  SECRET_KEY is set to the default 'change-me'. "
+        "Set a strong random key in your .env file before deploying.",
+        stacklevel=1,
+    )
+
+
 Base.metadata.create_all(bind=engine)
 
 
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    description="REST API for managing displaced families across humanitarian shelter centers.",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# ── Middleware ────────────────────────────────────────────────────────────────
+
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+
+# ── Global error handlers ─────────────────────────────────────────────────────
+@app.exception_handler(NotFoundError)
+async def not_found_handler(request: Request, exc: NotFoundError):
+    return JSONResponse(status_code=404, content={"detail": exc.message})
+
+
+@app.exception_handler(ConflictError)
+async def conflict_handler(request: Request, exc: ConflictError):
+    return JSONResponse(status_code=409, content={"detail": exc.message})
+
+
+@app.exception_handler(DomainError)
+async def domain_error_handler(request: Request, exc: DomainError):
+    return JSONResponse(status_code=400, content={"detail": exc.message})
+
 
 admin = Admin(
     engine=engine,
     title="Displaced Camp Admin",
     templates_dir="templates",  # ← tells admin where your templates folder is
+    auth_provider=AdminAuthProvider(),
     index_view=DashboardView(
         label="Dashboard",
         icon="fa fa-home",

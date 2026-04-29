@@ -2,10 +2,10 @@ from enum import StrEnum
 
 
 class UserRole(StrEnum):
-    SUPERADMIN = "superadmin"
-    MANAGER = "manager"
-    BLOCK_HEAD = "block_head"
-    FAMILY = "family"
+    SUPERADMIN = "SUPERADMIN"
+    MANAGER = "MANAGER"
+    BLOCK_HEAD = "BLOCK_HEAD"
+    FAMILY = "FAMILY"
 
 
 class ResidencyStatus(StrEnum):

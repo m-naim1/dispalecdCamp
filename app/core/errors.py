@@ -4,6 +4,9 @@ class DomainError(Exception):
         self.message = message
         super().__init__(self.message)
 
+    def __str__(self):
+        return self.message or self.code
+
 
 class ValidationError(DomainError):
     pass

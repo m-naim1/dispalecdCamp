@@ -1,4 +1,3 @@
-
 from sqlalchemy.orm import Session
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
@@ -54,10 +53,12 @@ def update_user(db: Session, user_id: int, user_in: UserUpdate) -> User:
                 code="User_Already_Exists",
                 message=f"User with username {user_in.username} already exists",
             )
-    for field, value in user_in.model_dump(exclude_unset=True).items():
+    for field, value in user_in.model_dump(
+        exclude_unset=True, exclude={"password"}
+    ).items():
         setattr(user, field, value)
     if user_in.password:
-        user.password_hash = get_password_hash(user_in.password)
+        user.hashed_password = get_password_hash(user_in.password)
     db.commit()
     db.refresh(user)
     return user

@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.18.4",
     "bcrypt>=5.0.0",
     "fastapi>=0.124.0",
+    "itsdangerous>=2.2.0",
     "passlib[bcrypt]>=1.7.4",
     "pydantic-settings>=2.12.0",
     "pydantic[email]>=2.12.5",

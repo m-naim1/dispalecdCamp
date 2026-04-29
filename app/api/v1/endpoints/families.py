@@ -1,4 +1,5 @@
 # from typing import List
+from starlette.status import HTTP_409_CONFLICT
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -35,7 +36,7 @@ def create_new_family(
         family = family_service.create_family(db=db, family_in=family_in)
     except ConflictError as e:
         raise HTTPException(
-            status_code=400,
+            status_code=HTTP_409_CONFLICT,
             detail=e.message,
         )
     return family

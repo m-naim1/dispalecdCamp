@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, require_role
-from app.api.v1 import router
 from app.core.errors import NotFoundError, ConflictError
 from app.models.enums import UserRole
 from app.schemas.user import UserResponse, UserUpdate

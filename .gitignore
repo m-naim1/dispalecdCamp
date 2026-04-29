@@ -13,3 +13,4 @@ wheels/
 
 *.log
 *.db
+.env
