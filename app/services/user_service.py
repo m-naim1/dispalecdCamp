@@ -1,11 +1,7 @@
-from ast import Return
-from operator import ge
-from tkinter import S
 
 from sqlalchemy.orm import Session
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
-from app.models.enums import UserRole
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.errors import NotFoundError, ConflictError
 

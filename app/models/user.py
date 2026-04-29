@@ -5,7 +5,6 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column, validates
 from sqlalchemy.sql import func
 from app.db.session import Base
 from app.models.enums import UserRole
-from app.models.family import Family
 from app.models.lookups import ShelterBlock
 
 

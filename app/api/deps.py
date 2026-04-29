@@ -3,7 +3,6 @@ from typing import Generator
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
 from app.db.session import SessionLocal
 from app.core.security import decode_access_token
 from app.models.user import User

@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Displaced People Camp Manager"
     API_V1_STR: str = "/api/v1"
 
-    SQLALCHEMY_DATABASE_URI: str = f"sqlite:///./camp_manager.db"
+    SQLALCHEMY_DATABASE_URI: str = "sqlite:///./camp_manager.db"
 
     SECRET_KEY: str = "change-me"
     ALGORITHM: str = "HS256"
