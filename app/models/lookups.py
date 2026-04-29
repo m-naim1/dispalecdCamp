@@ -20,7 +20,6 @@ class RelationshipToHead(LookupBase):
     __tablename__ = "relationships_to_head"
 
 
-
 class ShelterQuality(LookupBase):
     __tablename__ = "shelter_quality"
 

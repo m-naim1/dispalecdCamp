@@ -156,8 +156,11 @@ class Member(Base):
     )
 
     head_family: Mapped["Family"] = relationship(
-        "Family", foreign_keys=[Family.head_id], back_populates="head",viewonly=True
+        "Family", foreign_keys=[Family.head_id], back_populates="head", viewonly=True
     )
     spouse_family: Mapped["Family"] = relationship(
-        "Family", foreign_keys=[Family.spouse_id], back_populates="spouse", viewonly=True
+        "Family",
+        foreign_keys=[Family.spouse_id],
+        back_populates="spouse",
+        viewonly=True,
     )

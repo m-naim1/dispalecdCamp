@@ -9,13 +9,17 @@ from app.core.security import get_password_hash
 from app.models.family import Family, Member
 from app.models.lookups import ShelterBlock, ShelterCenter
 
+
 class DashboardView(CustomView):
     async def render(self, request: Request, templates) -> Response:
         db: Session = request.state.session
 
-        total_families  = db.query(func.count(Family.id)).scalar() or 0
-        active_families = db.query(func.count(Family.id)).filter(Family.is_active == True).scalar() or 0
-        total_members   = db.query(func.count(Member.id)).scalar() or 0
+        total_families = db.query(func.count(Family.id)).scalar() or 0
+        active_families = (
+            db.query(func.count(Family.id)).filter(Family.is_active == True).scalar()
+            or 0
+        )
+        total_members = db.query(func.count(Member.id)).scalar() or 0
 
         block_counts = (
             db.query(ShelterBlock.name_en, func.count(Family.id).label("cnt"))
@@ -34,16 +38,30 @@ class DashboardView(CustomView):
         )
 
         stats = {
-            "total_families":   total_families,
-            "active_families":  active_families,
+            "total_families": total_families,
+            "active_families": active_families,
             "archived_families": total_families - active_families,
-            "total_members":    total_members,
-            "avg_per_family":   round(total_members / total_families, 1) if total_families else 0,
-            "disabled": db.query(func.count(Member.id)).filter(Member.disabled == True).scalar() or 0,
-            "injured":  db.query(func.count(Member.id)).filter(Member.injured == True).scalar() or 0,
-            "pregnant": db.query(func.count(Member.id)).filter(Member.pregnant == True).scalar() or 0,
-            "chronic":  db.query(func.count(Member.id)).filter(Member.has_chronic_disease == True).scalar() or 0,
-            "block_counts":  block_counts,
+            "total_members": total_members,
+            "avg_per_family": round(total_members / total_families, 1)
+            if total_families
+            else 0,
+            "disabled": db.query(func.count(Member.id))
+            .filter(Member.disabled == True)
+            .scalar()
+            or 0,
+            "injured": db.query(func.count(Member.id))
+            .filter(Member.injured == True)
+            .scalar()
+            or 0,
+            "pregnant": db.query(func.count(Member.id))
+            .filter(Member.pregnant == True)
+            .scalar()
+            or 0,
+            "chronic": db.query(func.count(Member.id))
+            .filter(Member.has_chronic_disease == True)
+            .scalar()
+            or 0,
+            "block_counts": block_counts,
             "center_counts": center_counts,
             "max_block": max((c for _, c in block_counts), default=1) or 1,
         }

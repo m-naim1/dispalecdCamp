@@ -9,6 +9,7 @@ from app.models.enums import UserRole
 from app.schemas.user import Token, UserResponse, UserCreate
 from app.services import user_service
 from app.core.errors import ConflictError
+
 router = APIRouter()
 
 
@@ -65,8 +66,14 @@ def get_me(current_user=Depends(get_current_user)):
     return current_user
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(user_in: UserCreate, db: Session = Depends(get_db),_=Depends(require_role(UserRole.SUPERADMIN))):
+@router.post(
+    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
+)
+def register_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    _=Depends(require_role(UserRole.SUPERADMIN)),
+):
     """
     Create a new system user (Manager, Block_hed, etc)
     Only admin can access this endpoint

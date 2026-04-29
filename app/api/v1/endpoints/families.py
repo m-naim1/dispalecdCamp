@@ -49,7 +49,13 @@ def create_new_family(
 def read_family(
     family_id: int,
     db: Session = Depends(get_db),
-    _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER, UserRole.BLOCK_HEAD,)),
+    _=Depends(
+        require_role(
+            UserRole.SUPERADMIN,
+            UserRole.MANAGER,
+            UserRole.BLOCK_HEAD,
+        )
+    ),
 ):
     """
     Get a specific family by ID to see the calculated stats and members.

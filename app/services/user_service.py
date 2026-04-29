@@ -74,8 +74,9 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
         or not user.is_active
         or not verify_password(password, user.hashed_password)
     ):
-       return None
+        return None
     return user
+
 
 def deactivate_user(db: Session, user_id: int) -> None:
     user = get_user_by_id(db, user_id)
@@ -87,6 +88,7 @@ def deactivate_user(db: Session, user_id: int) -> None:
         return
     user.is_active = False
     db.commit()
+
 
 def activate_user(db: Session, user_id: int) -> None:
     user = get_user_by_id(db, user_id)

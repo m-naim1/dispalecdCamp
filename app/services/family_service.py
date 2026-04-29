@@ -30,7 +30,7 @@ def create_family(db: Session, family_in: FamilyCreate) -> Family:
                 code="member_already_exists",
                 message=f"Member with the {member_data.id} already exists in another family.",
             )
-        
+
         db_member = Member(**member_data.model_dump())
         db_members.append(db_member)
 
@@ -184,9 +184,8 @@ def update_member(db: Session, member_id: int, member_in: MemberUpdate):
         if member_in.pregnant and member.gender != Gender.FEMALE:
             raise ValidationError(
                 code="Invalid_pregnancy_status",
-                message="Only female members can be pregnant."
+                message="Only female members can be pregnant.",
             )
-
 
     update_data = member_in.model_dump(exclude_unset=True)
     for key, value in update_data.items():
