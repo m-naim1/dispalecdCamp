@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette_admin.contrib.sqla import Admin, ModelView
@@ -8,6 +9,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import NotFoundError, ConflictError, DomainError
 from app.db.session import Base, engine
+from sqlalchemy import select
 from app.models.family import Family, Member
 from app.models.user import User
 from app.models.lookups import (
@@ -21,7 +23,7 @@ from app.models.lookups import (
 
 # Import models to ensure tables are created
 # from app.models import family
-from app.db.session import SessionLocal
+from app.db.session import AsyncSessionLocal
 from app.core.security import get_password_hash
 from app.models.enums import UserRole
 
@@ -36,10 +38,40 @@ if settings.SECRET_KEY == "change-me":
     )
 
 
-Base.metadata.create_all(bind=engine)
+async def seed_superadmin():
+    db = AsyncSessionLocal()
+    try:
+        result = await db.execute(select(User).where(User.role == UserRole.SUPERADMIN))
+        if not result.scalar_one_or_none():
+            admin = User(
+                username="admin",
+                email="admin@camp.local",
+                full_name="System Admin",
+                hashed_password=get_password_hash("admin1234"),
+                role=UserRole.SUPERADMIN,
+            )
+            db.add(admin)
+            await db.commit()
+            print("✓ Superadmin created — username: admin / password: admin1234")
+    finally:
+        await db.close()
+
+
+# Table creation must also be async:
+async def create_tables():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await create_tables()
+    await seed_superadmin()
+    yield  # Control returns to FastAPI to start the server
 
 
 app = FastAPI(
+    lifespan=lifespan,
     title=settings.PROJECT_NAME,
     description="REST API for managing displaced families across humanitarian shelter centers.",
     version="1.0.0",
@@ -103,28 +135,6 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
-
-
-def seed_superadmin():
-    db = SessionLocal()
-    try:
-        exists = db.query(User).filter(User.role == UserRole.SUPERADMIN).first()
-        if not exists:
-            admin = User(
-                username="admin",
-                email="admin@camp.local",
-                full_name="System Admin",
-                hashed_password=get_password_hash("admin1234"),
-                role=UserRole.SUPERADMIN,
-            )
-            db.add(admin)
-            db.commit()
-            print("✓ Superadmin created — username: admin / password: admin1234")
-    finally:
-        db.close()
-
-
-seed_superadmin()
 
 
 # 3. Main execution block to run the app using Uvicorn

@@ -1,19 +1,28 @@
-from sqlalchemy.orm import Session
+from typing import Sequence
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import get_password_hash, verify_password
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.errors import NotFoundError, ConflictError
 
 
-def get_user_by_username(db: Session, username: str) -> User | None:
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        return None
-    return user
+async def get_user_by_username(db: AsyncSession, username: str) -> User | None:
+    result = await db.execute(select(User).where(User.username == username))
+    return result.scalar_one_or_none()
 
 
-def get_user_by_id(db: Session, user_id: int) -> User:
-    user = db.query(User).filter(User.id == user_id).first()
+async def get_active_user_by_username(db: AsyncSession, username: str) -> User | None:
+    """Returns the user only if they exist AND are active. Used by admin auth."""
+    result = await db.execute(
+        select(User).where(User.username == username, User.is_active == True)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_user_by_id(db: AsyncSession, user_id: int) -> User:
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
     if not user:
         raise NotFoundError(
             code="User_Not_Found", message=f"User with id {user_id} not found"
@@ -21,12 +30,16 @@ def get_user_by_id(db: Session, user_id: int) -> User:
     return user
 
 
-def get_users(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
-    return db.query(User).offset(skip).limit(limit).all()
+async def get_users(
+    db: AsyncSession, skip: int = 0, limit: int = 100
+) -> Sequence[User]:
+    result = await db.execute(select(User).offset(skip).limit(limit))
+    return result.scalars().all()
 
 
-def create_user(db: Session, user_in: UserCreate) -> User:
-    if db.query(User).filter(User.username == user_in.username).first():
+async def create_user(db: AsyncSession, user_in: UserCreate) -> User:
+    result = await db.execute(select(User).where(User.username == user_in.username))
+    if result.scalar_one_or_none():
         raise ConflictError(
             code="User_Already_Exists",
             message=f"User with username {user_in.username} already exists",
@@ -40,15 +53,16 @@ def create_user(db: Session, user_in: UserCreate) -> User:
         hashed_password=get_password_hash(user_in.password),
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
-def update_user(db: Session, user_id: int, user_in: UserUpdate) -> User:
-    user = get_user_by_id(db, user_id)
+async def update_user(db: AsyncSession, user_id: int, user_in: UserUpdate) -> User:
+    user = await get_user_by_id(db, user_id)
     if user_in.username and user_in.username != user.username:
-        if db.query(User).filter(User.username == user_in.username).first():
+        result = await db.execute(select(User).where(User.username == user_in.username))
+        if result.scalar_one_or_none():
             raise ConflictError(
                 code="User_Already_Exists",
                 message=f"User with username {user_in.username} already exists",
@@ -59,13 +73,15 @@ def update_user(db: Session, user_id: int, user_in: UserUpdate) -> User:
         setattr(user, field, value)
     if user_in.password:
         user.hashed_password = get_password_hash(user_in.password)
-    db.commit()
-    db.refresh(user)
+    await db.commit()
+    await db.refresh(user)
     return user
 
 
-def authenticate_user(db: Session, username: str, password: str) -> User | None:
-    user = get_user_by_username(db, username)
+async def authenticate_user(
+    db: AsyncSession, username: str, password: str
+) -> User | None:
+    user = await get_user_by_username(db, username)
     if (
         not user
         or not user.is_active
@@ -75,25 +91,17 @@ def authenticate_user(db: Session, username: str, password: str) -> User | None:
     return user
 
 
-def deactivate_user(db: Session, user_id: int) -> None:
-    user = get_user_by_id(db, user_id)
-    if not user:
-        raise NotFoundError(
-            code="User_Not_Found", message=f"User with id {user_id} not found"
-        )
+async def deactivate_user(db: AsyncSession, user_id: int) -> None:
+    user = await get_user_by_id(db, user_id)
     if not user.is_active:
         return
     user.is_active = False
-    db.commit()
+    await db.commit()
 
 
-def activate_user(db: Session, user_id: int) -> None:
-    user = get_user_by_id(db, user_id)
-    if not user:
-        raise NotFoundError(
-            code="User_Not_Found", message=f"User with id {user_id} not found"
-        )
+async def activate_user(db: AsyncSession, user_id: int) -> None:
+    user = await get_user_by_id(db, user_id)
     if user.is_active:
         return
     user.is_active = True
-    db.commit()
+    await db.commit()

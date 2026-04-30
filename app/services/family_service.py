@@ -1,21 +1,81 @@
 from datetime import datetime
-from typing import List
-from sqlalchemy.orm import Session
+from typing import Sequence
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
 from app.core.errors import ConflictError, DomainError, NotFoundError, ValidationError
 from app.models.enums import Gender
 from app.models.family import Family, Member
+from app.models.lookups import ShelterBlock, ShelterCenter
 from app.schemas.family import FamilyCreate, FamilyUpdate, MemberCreate, MemberUpdate
 
 
-def create_family(db: Session, family_in: FamilyCreate) -> Family:
+async def get_dashboard_stats(db: AsyncSession) -> dict:
+    """
+    Aggregates all statistics needed for the admin dashboard in a single service call.
+    """
+
+    async def _count(query) -> int:
+        result = await db.execute(query)
+        return result.scalar() or 0
+
+    total_families = await _count(select(func.count(Family.id)))
+    active_families = await _count(
+        select(func.count(Family.id)).where(Family.is_active == True)
+    )
+    total_members = await _count(select(func.count(Member.id)))
+
+    block_result = await db.execute(
+        select(ShelterBlock.name_en, func.count(Family.id).label("cnt"))
+        .outerjoin(Family, Family.shelter_block_id == ShelterBlock.id)
+        .group_by(ShelterBlock.id)
+        .order_by(func.count(Family.id).desc())
+    )
+    block_counts = block_result.all()
+
+    center_result = await db.execute(
+        select(ShelterCenter.name_en, func.count(Family.id).label("cnt"))
+        .outerjoin(Family, Family.current_shelter_center_id == ShelterCenter.id)
+        .group_by(ShelterCenter.id)
+        .order_by(func.count(Family.id).desc())
+    )
+    center_counts = center_result.all()
+
+    return {
+        "total_families": total_families,
+        "active_families": active_families,
+        "archived_families": total_families - active_families,
+        "total_members": total_members,
+        "avg_per_family": round(total_members / total_families, 1)
+        if total_families
+        else 0,
+        "disabled": await _count(
+            select(func.count(Member.id)).where(Member.disabled == True)
+        ),
+        "injured": await _count(
+            select(func.count(Member.id)).where(Member.injured == True)
+        ),
+        "pregnant": await _count(
+            select(func.count(Member.id)).where(Member.pregnant == True)
+        ),
+        "chronic": await _count(
+            select(func.count(Member.id)).where(Member.has_chronic_disease == True)
+        ),
+        "block_counts": block_counts,
+        "center_counts": center_counts,
+        "max_block": max((c for _, c in block_counts), default=1) or 1,
+    }
+
+
+async def create_family(db: AsyncSession, family_in: FamilyCreate) -> Family:
     """
     Creates a new family and its members, automatically calculating statistics.
     """
 
     # 1. Pre-check: Ensure the Head of Family doesn't already exist
-    # (This prevents double registration of the same family)
-    existing_head = db.query(Member).filter(Member.id == family_in.head_id).first()
-    if existing_head:
+    existing_head = await db.execute(
+        select(Member).where(Member.id == family_in.head_id)
+    )
+    if existing_head.scalar_one_or_none():
         raise ConflictError(
             code="member_already_exists",
             message=f"Member with the {family_in.head_id} already exists in another family.",
@@ -24,40 +84,37 @@ def create_family(db: Session, family_in: FamilyCreate) -> Family:
     db_members = []
 
     for member_data in family_in.members:
-        # Check for duplicates for every single member in the list
-        if db.query(Member).filter(Member.id == member_data.id).first():
+        existing_member = await db.execute(
+            select(Member).where(Member.id == member_data.id)
+        )
+        if existing_member.scalar_one_or_none():
             raise ConflictError(
                 code="member_already_exists",
                 message=f"Member with the {member_data.id} already exists in another family.",
             )
+        db_members.append(Member(**member_data.model_dump()))
 
-        db_member = Member(**member_data.model_dump())
-        db_members.append(db_member)
-
-    # 3. Create the Family Object
     db_family = Family(**family_in.model_dump())
 
-    # 4. Save to Database
     db.add(db_family)
-    db.flush()  # "Flush" pushes the family to DB to generate the unique 'id', but doesn't commit yet
+    await db.flush()
 
-    # 5. Link Members to the new Family ID
     for db_member in db_members:
         db_member.family_id = db_family.id
         db.add(db_member)
 
-    # Commit everything as a single transaction
-    db.commit()
-    db.refresh(db_family)
+    await db.commit()
+    await db.refresh(db_family)
 
     return db_family
 
 
-def get_family(db: Session, family_id: int) -> Family:
+async def get_family(db: AsyncSession, family_id: int) -> Family:
     """
     Retrieves a family by its ID, including all members.
     """
-    family = db.query(Family).filter(Family.id == family_id).first()
+    result = await db.execute(select(Family).where(Family.id == family_id))
+    family = result.scalar_one_or_none()
     if not family:
         raise NotFoundError(
             code="Family_not_Found", message=f"Family with id {family_id} not found"
@@ -65,48 +122,42 @@ def get_family(db: Session, family_id: int) -> Family:
     return family
 
 
-def get_families(
-    db: Session, skip: int = 0, limit: int = 100, active: bool = True
-) -> List[Family]:
+async def get_families(
+    db: AsyncSession, skip: int = 0, limit: int = 100, active: bool = True
+) -> Sequence[Family]:
     """
     Retrieves a list of families, with optional pagination and active-only filtering.
     """
-    query = db.query(Family)
+    query = select(Family)
     if active:
-        query = query.filter(Family.is_active)
-    return query.offset(skip).limit(limit).all()
+        query = query.where(Family.is_active)
+    result = await db.execute(query.offset(skip).limit(limit))
+    return result.scalars().all()
 
 
-def update_family(db: Session, family_id: int, family_data: FamilyUpdate) -> Family:
+async def update_family(
+    db: AsyncSession, family_id: int, family_data: FamilyUpdate
+) -> Family:
     """
     Updates family-level details (like phone, housing, etc.) without affecting members.
     """
-    family = db.query(Family).filter(Family.id == family_id).first()
-    if not family:
-        raise NotFoundError(
-            code="Family_not_Found", message=f"Family with id {family_id} not found"
-        )
+    family = await get_family(db, family_id)
 
-    update_data = family_data.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
+    for key, value in family_data.model_dump(exclude_unset=True).items():
         setattr(family, key, value)
 
     db.add(family)
-    db.commit()
-    db.refresh(family)
+    await db.commit()
+    await db.refresh(family)
 
     return family
 
 
-def deactivate_family(db: Session, family_id: int) -> Family:
+async def deactivate_family(db: AsyncSession, family_id: int) -> Family:
     """
-    Archive a family without deleteting it.
+    Archive a family without deleting it.
     """
-    family = db.query(Family).filter(Family.id == family_id).first()
-    if not family:
-        raise NotFoundError(
-            code="Family_not_Found", message=f"Family with id {family_id} not found"
-        )
+    family = await get_family(db, family_id)
     if not family.is_active:
         raise DomainError(
             code="Family_already_archived",
@@ -116,20 +167,16 @@ def deactivate_family(db: Session, family_id: int) -> Family:
     family.archived_at = datetime.now()
 
     db.add(family)
-    db.commit()
-    db.refresh(family)
+    await db.commit()
+    await db.refresh(family)
     return family
 
 
-def activate_family(db: Session, family_id: int) -> Family:
+async def activate_family(db: AsyncSession, family_id: int) -> Family:
     """
-    Archive a family without deleteting it.
+    Restore an archived family back to active status.
     """
-    family = db.query(Family).filter(Family.id == family_id).first()
-    if not family:
-        raise NotFoundError(
-            code="Family_not_Found", message=f"Family with id {family_id} not found"
-        )
+    family = await get_family(db, family_id)
     if family.is_active:
         raise DomainError(
             code="Family_already_activated",
@@ -139,47 +186,45 @@ def activate_family(db: Session, family_id: int) -> Family:
     family.archived_at = None  # type: ignore
 
     db.add(family)
-    db.commit()
-    db.refresh(family)
+    await db.commit()
+    await db.refresh(family)
     return family
 
 
-def add_member(db: Session, family_id: int, member_in: MemberCreate) -> Member:
+async def add_member(
+    db: AsyncSession, family_id: int, member_in: MemberCreate
+) -> Member:
     """
-    Adds a new member to an existing family and updates family statistics.
+    Adds a new member to an existing family.
     """
-    family = db.query(Family).filter(Family.id == family_id).first()
-    if not family:
-        raise NotFoundError(
-            code="Family_not_Found", message=f"Family with id {family_id} not found"
-        )
+    await get_family(db, family_id)  # raises NotFoundError if missing
 
-    # Check for duplicate member ID across all families
-    if db.query(Member).filter(Member.id == member_in.id).first():
+    existing = await db.execute(select(Member).where(Member.id == member_in.id))
+    if existing.scalar_one_or_none():
         raise ConflictError(
             code="member_already_exists",
             message=f"Member with the {member_in.id} already exists in another family.",
         )
 
-    # Create and add the new member
     new_member = Member(**member_in.model_dump(), family_id=family_id)
     db.add(new_member)
-    db.commit()
-    db.refresh(new_member)
+    await db.commit()
+    await db.refresh(new_member)
 
     return new_member
 
 
-def update_member(db: Session, member_id: int, member_in: MemberUpdate):
+async def update_member(db: AsyncSession, member_id: int, member_in: MemberUpdate):
     """
     Updates an existing member's details.
     """
-    member = db.query(Member).filter(Member.id == member_id).first()
+    result = await db.execute(select(Member).where(Member.id == member_id))
+    member = result.scalar_one_or_none()
     if not member:
         raise NotFoundError(
             code="Member_not_Found", message=f"Member with id {member_id} not found"
         )
-    # validate updateting Gender and pregnancy status
+
     if member_in.pregnant is not None:
         if member_in.pregnant and member.gender != Gender.FEMALE:
             raise ValidationError(
@@ -187,63 +232,39 @@ def update_member(db: Session, member_id: int, member_in: MemberUpdate):
                 message="Only female members can be pregnant.",
             )
 
-    update_data = member_in.model_dump(exclude_unset=True)
-    for key, value in update_data.items():
+    for key, value in member_in.model_dump(exclude_unset=True).items():
         setattr(member, key, value)
 
     db.add(member)
-    db.commit()
-    db.refresh(member)
+    await db.commit()
+    await db.refresh(member)
 
     return member
 
 
-def delete_member(db: Session, member_id: int):
+async def delete_member(db: AsyncSession, member_id: int):
     """
-    Deletes a member from the database and updates family statistics.
+    Deletes a member from the database.
     """
-    member = db.query(Member).filter(Member.id == member_id).first()
+    result = await db.execute(select(Member).where(Member.id == member_id))
+    member = result.scalar_one_or_none()
     if not member:
         raise NotFoundError(
             code="Member_not_Found", message=f"Member with id {member_id} not found"
         )
 
-    db.delete(member)
-    db.commit()
+    await db.delete(member)
+    await db.commit()
 
 
-# def recalculate_family_stats(db: Session, family_id: int):
-#     """
-#     Recalculates counts (pregnant, disabled, etc.) for a specific family
-#     based on its current members in the database.
-#     """
-#     family = db.query(Family).filter(Family.id == family_id).first()
-#     if not family:
-#         raise NotFoundError(
-#             code="Family_not_Found", message=f"Family with id {family_id} not found"
-#         )
-
-#     # Fetch all members freshly from DB
-#     members: List[Member] = db.query(Member).filter(Member.family_id == family_id).all()
-
-#     # Reset counters
-#     family.total_members_count = len(members)
-#     family.disabled_count = 0
-#     family.injured_count = 0
-#     family.chronic_disease_count = 0
-#     family.pregnant_count = 0
-
-#     # Recount
-#     for member in members:
-#         if member.is_disabled:
-#             family.disabled_count += 1
-#         if member.is_injured:
-#             family.injured_count += 1
-#         if member.has_chronic_disease:
-#             family.chronic_disease_count += 1
-#         if member.is_pregnant:
-#             family.pregnant_count += 1
-#     # Update Records
-#     db.add(family)
-#     db.commit()
-#     db.refresh(family)
+async def get_member(db: AsyncSession, member_id: int) -> Member:
+    """
+    Retrieves a member by their ID.
+    """
+    result = await db.execute(select(Member).where(Member.id == member_id))
+    member = result.scalar_one_or_none()
+    if not member:
+        raise NotFoundError(
+            code="Member_not_Found", message=f"Member with id {member_id} not found"
+        )
+    return member

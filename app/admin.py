@@ -1,5 +1,3 @@
-from sqlalchemy import func
-from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette_admin import CustomView
@@ -7,11 +5,11 @@ from starlette_admin.auth import AdminUser, AuthProvider
 from starlette_admin.contrib.sqla import ModelView
 from starlette_admin.exceptions import LoginFailed
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.security import get_password_hash, verify_password
-from app.models.family import Family, Member
-from app.models.lookups import ShelterBlock, ShelterCenter
-from app.models.user import User
 from app.models.enums import UserRole
+from app.services import user_service, family_service
 
 
 class AdminAuthProvider(AuthProvider):
@@ -23,8 +21,8 @@ class AdminAuthProvider(AuthProvider):
         request: Request,
         response: Response,
     ) -> Response:
-        db: Session = request.state.session
-        user = db.query(User).filter(User.username == username).first()
+        db: AsyncSession = request.state.session
+        user = await user_service.get_user_by_username(db, username)
 
         if not user or not user.is_active:
             raise LoginFailed("Invalid username or password")
@@ -33,29 +31,29 @@ class AdminAuthProvider(AuthProvider):
         if user.role not in (UserRole.SUPERADMIN, UserRole.MANAGER):
             raise LoginFailed("You do not have permission to access the admin panel")
 
-        request.session.update({"admin_username": username})
+        request.session.update(
+            {
+                "admin_username": username,
+                "admin_full_name": user.full_name or username,
+            }
+        )
         return response
 
     async def is_authenticated(self, request: Request) -> bool:
         username = request.session.get("admin_username")
         if not username:
             return False
-        db: Session = request.state.session
-        user = (
-            db.query(User)
-            .filter(
-                User.username == username,
-                User.is_active == True,
-            )
-            .first()
-        )
+        db: AsyncSession = request.state.session
+        user = await user_service.get_active_user_by_username(db, username)
         return user is not None
 
-    async def get_admin_user(self, request: Request) -> AdminUser:
+    def get_admin_user(self, request: Request) -> AdminUser | None:
         username = request.session.get("admin_username")
-        db: Session = request.state.session
-        user = db.query(User).filter(User.username == username).first()
-        return AdminUser(username=user.full_name or user.username)
+        if not username:
+            return None
+        # Full name may have been stored at login; fall back to username
+        full_name = request.session.get("admin_full_name") or username
+        return AdminUser(username=full_name)
 
     async def logout(self, request: Request, response: Response) -> Response:
         request.session.clear()
@@ -64,59 +62,8 @@ class AdminAuthProvider(AuthProvider):
 
 class DashboardView(CustomView):
     async def render(self, request: Request, templates) -> Response:
-        db: Session = request.state.session
-
-        total_families = db.query(func.count(Family.id)).scalar() or 0
-        active_families = (
-            db.query(func.count(Family.id)).filter(Family.is_active == True).scalar()
-            or 0
-        )
-        total_members = db.query(func.count(Member.id)).scalar() or 0
-
-        block_counts = (
-            db.query(ShelterBlock.name_en, func.count(Family.id).label("cnt"))
-            .outerjoin(Family, Family.shelter_block_id == ShelterBlock.id)
-            .group_by(ShelterBlock.id)
-            .order_by(func.count(Family.id).desc())
-            .all()
-        )
-
-        center_counts = (
-            db.query(ShelterCenter.name_en, func.count(Family.id).label("cnt"))
-            .outerjoin(Family, Family.current_shelter_center_id == ShelterCenter.id)
-            .group_by(ShelterCenter.id)
-            .order_by(func.count(Family.id).desc())
-            .all()
-        )
-
-        stats = {
-            "total_families": total_families,
-            "active_families": active_families,
-            "archived_families": total_families - active_families,
-            "total_members": total_members,
-            "avg_per_family": round(total_members / total_families, 1)
-            if total_families
-            else 0,
-            "disabled": db.query(func.count(Member.id))
-            .filter(Member.disabled == True)
-            .scalar()
-            or 0,
-            "injured": db.query(func.count(Member.id))
-            .filter(Member.injured == True)
-            .scalar()
-            or 0,
-            "pregnant": db.query(func.count(Member.id))
-            .filter(Member.pregnant == True)
-            .scalar()
-            or 0,
-            "chronic": db.query(func.count(Member.id))
-            .filter(Member.has_chronic_disease == True)
-            .scalar()
-            or 0,
-            "block_counts": block_counts,
-            "center_counts": center_counts,
-            "max_block": max((c for _, c in block_counts), default=1) or 1,
-        }
+        db: AsyncSession = request.state.session
+        stats = await family_service.get_dashboard_stats(db)
 
         return templates.TemplateResponse(
             request=request,
