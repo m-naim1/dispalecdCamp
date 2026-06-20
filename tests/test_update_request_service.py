@@ -46,7 +46,9 @@ async def test_review_request(db: AsyncSession):
     req_in = UpdateRequestCreate(family_id=1, requested_changes='{"x": "y"}')
     created = await update_request_service.create_update_request(db, req_in)
 
-    reviewed = await update_request_service.review_request(db, created.id, "approved", 42)
+    reviewed = await update_request_service.review_request(
+        db, created.id, "approved", 42
+    )
     assert reviewed.status == "approved"
     assert reviewed.reviewed_by == 42
     assert reviewed.reviewed_at is not None

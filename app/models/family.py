@@ -69,6 +69,9 @@ class Family(Base):
     # shelter_type_id: Mapped[int] = mapped_column(
     #     Integer, ForeignKey("shelter_types.id"), nullable=False
     # )
+    housing_type: Mapped[HousingType] = mapped_column(
+        Enum(HousingType, native_enum=False)
+    )
     shelter_quality_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("shelter_quality.id"), nullable=True
     )
@@ -83,9 +86,6 @@ class Family(Base):
         DateTime(timezone=True), nullable=True
     )  # Date they left
 
-    housing_type: Mapped[HousingType] = mapped_column(
-        Enum(HousingType, native_enum=False)
-    )
     # --- Relationships ---
     members: Mapped[List["Member"]] = relationship(
         "Member",

@@ -1,10 +1,7 @@
-from typing import Sequence
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, require_role
+from app.api.deps import require_role, get_family_service, get_member_service
 from app.core.errors import ConflictError, NotFoundError, DomainError, ValidationError
 from app.models.enums import UserRole
-from app.models.family import Family, Member
 from app.schemas.family import (
     FamilyCreate,
     FamilyResponse,
@@ -13,7 +10,7 @@ from app.schemas.family import (
     MemberResponse,
     MemberUpdate,
 )
-from app.services import family_service
+from app.services.family_service import FamilyService, MemberService
 
 router = APIRouter()
 
@@ -21,7 +18,7 @@ router = APIRouter()
 @router.post("/", response_model=FamilyResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_family(
     family_in: FamilyCreate,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -30,7 +27,7 @@ async def create_new_family(
     - Prevents duplicate members.
     """
     try:
-        family = await family_service.create_family(db=db, family_in=family_in)
+        family = await family_service.create_family(family_in=family_in)
     except ConflictError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -42,7 +39,7 @@ async def create_new_family(
 @router.get("/{family_id}", response_model=FamilyResponse)
 async def read_family(
     family_id: int,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(
         require_role(
             UserRole.SUPERADMIN,
@@ -55,18 +52,18 @@ async def read_family(
     Get a specific family by ID to see the calculated stats and members.
     """
     try:
-        family = await family_service.get_family(db=db, family_id=family_id)
+        family = await family_service.get_family(family_id=family_id)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
     return family
 
 
-@router.get("/", response_model=Sequence[FamilyResponse])
+@router.get("/", response_model=list[FamilyResponse])
 async def read_families(
     skip: int = 0,
     limit: int = 100,
     active_only: bool = True,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER, UserRole.BLOCK_HEAD)),
 ):
     """
@@ -75,7 +72,7 @@ async def read_families(
     Set active_only=False to see everyone (including archived).
     """
     return await family_service.get_families(
-        db=db, skip=skip, limit=limit, active=active_only
+        skip=skip, limit=limit, active=active_only
     )
 
 
@@ -83,7 +80,7 @@ async def read_families(
 async def update_family_details(
     family_id: int,
     family_update: FamilyUpdate,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -91,7 +88,7 @@ async def update_family_details(
     """
     try:
         family = await family_service.update_family(
-            db=db, family_id=family_id, family_data=family_update
+             family_id=family_id, family_data=family_update
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
@@ -102,7 +99,7 @@ async def update_family_details(
 @router.patch("/{family_id}/archive", response_model=FamilyResponse)
 async def archive_family(
     family_id: int,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -110,8 +107,8 @@ async def archive_family(
     Sets is_active = False and records the archived_at timestamp.
     """
     try:
-        family: Family = await family_service.deactivate_family(
-            db=db, family_id=family_id
+        family = await family_service.deactivate_family(
+            family_id=family_id
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
@@ -124,15 +121,15 @@ async def archive_family(
 @router.patch("/{family_id}/restore", response_model=FamilyResponse)
 async def restore_family(
     family_id: int,
-    db: AsyncSession = Depends(get_db),
+    family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
     Restore an archived family back to active status.
     """
     try:
-        family: Family = await family_service.activate_family(
-            db=db, family_id=family_id
+        family = await family_service.activate_family(
+            family_id=family_id
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
@@ -145,7 +142,7 @@ async def restore_family(
 async def add_member_to_family(
     family_id: int,
     member_in: MemberCreate,
-    db: AsyncSession = Depends(get_db),
+    member_service: MemberService = Depends(get_member_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -153,8 +150,7 @@ async def add_member_to_family(
     Automatically recalculates family statistics.
     """
     try:
-        new_member: Member = await family_service.add_member(
-            db=db, family_id=family_id, member_in=member_in
+        new_member = await member_service.add_member( family_id=family_id, member_in=member_in
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
@@ -168,7 +164,7 @@ async def add_member_to_family(
 async def update_member(
     member_id: int,
     member_update: MemberUpdate,
-    db: AsyncSession = Depends(get_db),
+    member_service: MemberService = Depends(get_member_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -176,8 +172,8 @@ async def update_member(
     Automatically recalculates family statistics.
     """
     try:
-        updated_member: Member = await family_service.update_member(
-            db=db, member_id=member_id, member_in=member_update
+        updated_member = await member_service.update_member(
+             member_id=member_id, member_in=member_update
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
@@ -189,7 +185,7 @@ async def update_member(
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
     member_id: int,
-    db: AsyncSession = Depends(get_db),
+    member_service: MemberService = Depends(get_member_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER)),
 ):
     """
@@ -197,7 +193,7 @@ async def remove_member(
     Automatically recalculates family statistics.
     """
     try:
-        await family_service.delete_member(db=db, member_id=member_id)
+        await member_service.delete_member( member_id=member_id)
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=e.message)
 
