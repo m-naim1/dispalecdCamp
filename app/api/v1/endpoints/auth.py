@@ -1,23 +1,29 @@
-from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db, get_current_user, require_role
+
+from app.api.deps import (
+    get_current_user,
+    get_family_service,
+    get_member_service,
+    get_user_service,
+    require_role,
+)
 from app.core.security import create_access_token
 from app.models.enums import UserRole
-from app.schemas.user import Token, UserResponse, UserCreate
-from app.services import user_service, family_service
-from app.core.errors import ConflictError
+from app.schemas.user import FamilyLoginSchema, Token, UserCreate, UserResponse
+from app.services.family_service import FamilyService, MemberService
+from app.services.user_service import UserService
 
 router = APIRouter()
 
 
 @router.post("/login", response_model=Token)
 async def login(
-    form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)
+    credentials: OAuth2PasswordRequestForm = Depends(),
+    user_service: UserService = Depends(get_user_service),
 ):
     user = await user_service.authenticate_user(
-        db, form_data.username, form_data.password
+        credentials.username, credentials.password
     )
     if not user:
         raise HTTPException(
@@ -31,27 +37,29 @@ async def login(
 
 @router.post("/family-login", response_model=Token)
 async def family_login(
-    national_id: int, date_of_birth: date, db: AsyncSession = Depends(get_db)
+    credentials: FamilyLoginSchema,
+    family_service: FamilyService = Depends(get_family_service),
+    member_service: MemberService = Depends(get_member_service),
 ):
-    head = await family_service.get_member(db, national_id)
-    if not head or head.date_of_birth != date_of_birth:
+
+    head = await member_service.get_member(credentials.national_id)
+    if not head or head.date_of_birth != credentials.date_of_birth:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    family = await family_service.get_family(db, head.family_id)
-    if not family:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Family not found or inactive",
-        )
+    family = await family_service.get_family(head.family_id)
     if family.head_id != head.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
         )
     token = create_access_token(
-        data={"sub": str(national_id), "role": UserRole.FAMILY, "family_id": family.id}
+        data={
+            "sub": str(credentials.national_id),
+            "role": UserRole.FAMILY,
+            "family_id": family.id,
+        }
     )
     return {"access_token": token, "token_type": "bearer"}
 
@@ -70,14 +78,12 @@ async def get_me(current_user=Depends(get_current_user)):
 )
 async def register_user(
     user_in: UserCreate,
-    db: AsyncSession = Depends(get_db),
+    user_service: UserService = Depends(get_user_service),
     _=Depends(require_role(UserRole.SUPERADMIN)),
 ):
     """
     Create a new system user (Manager, Block_hed, etc)
     Only admin can access this endpoint
     """
-    try:
-        return await user_service.create_user(db, user_in)
-    except ConflictError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    return await user_service.create_user(user_in)

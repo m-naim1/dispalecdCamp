@@ -24,7 +24,7 @@ class MaritalStatus(StrEnum):
     WIDOWED = "widowed"  # ارمل/ة
     SINGLE = "single"  # اعزب/عزباء
     SECOND_WIFE = "second-wife"  # زوجة ثانية
-    ABANDONED = "Abandoned"  # مهجورة
+    ABANDONED = "abandoned"  # مهجورة
 
 
 class HousingType(StrEnum):

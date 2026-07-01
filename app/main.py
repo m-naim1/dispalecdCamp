@@ -1,30 +1,32 @@
-import uvicorn
-from fastapi import FastAPI, Request
+import logging
+import time
 from contextlib import asynccontextmanager
+
+import structlog
+import uvicorn
+from asgi_correlation_id import CorrelationIdMiddleware, correlation_id
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
+from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 from starlette_admin.contrib.sqla import Admin, ModelView
-from app.admin import UserAdminView, DashboardView, AdminAuthProvider
+
+from app.admin import AdminAuthProvider, DashboardView, UserAdminView
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.errors import NotFoundError, ConflictError, DomainError
-from app.db.session import Base, engine
-from sqlalchemy import select
+from app.core.errors import ConflictError, DomainError, NotFoundError, ValidationError
+from app.db.session import AsyncSessionLocal, engine
 from app.models.family import Family, Member
-from app.models.user import User
 from app.models.lookups import (
     City,
     Governor,
     RelationshipToHead,
-    ShelterQuality,
     ShelterBlock,
     ShelterCenter,
+    ShelterQuality,
 )
-
-from app.db.session import AsyncSessionLocal
-from app.core.security import get_password_hash
-from app.models.enums import UserRole
-from app.seed import seed_all
+from app.models.user import User
 
 # ── Startup validation ────────────────────────────────────────────────────────
 if settings.SECRET_KEY == "change-me":
@@ -37,37 +39,21 @@ if settings.SECRET_KEY == "change-me":
     )
 
 
-async def seed_superadmin():
-    db = AsyncSessionLocal()
-    try:
-        result = await db.execute(select(User).where(User.role == UserRole.SUPERADMIN))
-        if not result.scalar_one_or_none():
-            admin = User(
-                username="admin",
-                email="admin@camp.local",
-                full_name="System Admin",
-                hashed_password=get_password_hash("admin1234"),
-                role=UserRole.SUPERADMIN,
-            )
-            db.add(admin)
-            await db.commit()
-            print("✓ Superadmin created — username: admin / password: admin1234")
-    finally:
-        await db.close()
-
-
-# Table creation must also be async:
-async def create_tables():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+# Configure Structured Logging
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,  # Injects the Correlation ID
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.dev.ConsoleRenderer(),  # Colors for your terminal. Use JSONRenderer() in prod!
+    ],
+    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+)
+logger = structlog.get_logger()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_tables()
-    await seed_superadmin()
-    async with AsyncSessionLocal() as db:
-        await seed_all(db)
     yield
 
 
@@ -81,24 +67,139 @@ app = FastAPI(
 )
 
 # ── Middleware ────────────────────────────────────────────────────────────────
+# Add Correlation ID middleware (Generates X-Request-ID header)
 
+
+# ── Middleware ────────────────────────────────────────────────────────────────
+
+# 1. Add SessionMiddleware FIRST (Innermost layer)
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+
+# 2. Define your custom access logger (Middle layer)
+@app.middleware("http")
+async def custom_access_log(request: Request, call_next):
+    # 🛑 Ignore Prometheus and Health check noise
+    if request.url.path in [
+        "/metrics",
+        "/health",
+        "/health/liveness",
+        "/health/readiness",
+    ]:
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    start_time = time.time()
+
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        logger.error("request_crashed", error=str(e))
+        raise e
+
+    process_time = (time.time() - start_time) * 1000
+    req_id = correlation_id.get()
+    logger.info(
+        "api_request",
+        request_id=req_id,
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_ms=round(process_time, 2),
+        client_ip=client_ip,
+    )
+
+    # 🧹 Clean up context so the request_id doesn't leak to the next async request
+    structlog.contextvars.clear_contextvars()
+
+    return response
+
+
+# 3. Add CorrelationIdMiddleware LAST (Outermost layer - Runs FIRST on incoming requests!)
+app.add_middleware(CorrelationIdMiddleware)
+
+# 4. Instrument Prometheus (Usually added after Correlation ID)
+Instrumentator().instrument(app).expose(
+    app, endpoint="/metrics", include_in_schema=False
+)
 
 
 # ── Global error handlers ─────────────────────────────────────────────────────
 @app.exception_handler(NotFoundError)
 async def not_found_handler(request: Request, exc: NotFoundError):
-    return JSONResponse(status_code=404, content={"detail": exc.message})
+    logger.error(
+        exc.code,
+        method=request.method,
+        url=str(request.url),
+        error_type="NotFoundError",
+        error_message=exc.message,
+        exc_info=True,  # This prints the full Python traceback to your console
+    )
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND, content={"detail": exc.message}
+    )
 
 
 @app.exception_handler(ConflictError)
 async def conflict_handler(request: Request, exc: ConflictError):
-    return JSONResponse(status_code=409, content={"detail": exc.message})
+    logger.error(
+        exc.code,
+        method=request.method,
+        url=str(request.url),
+        error_type="ConfflictError",
+        error_message=exc.message,
+        exc_info=True,  # This prints the full Python traceback to your console
+    )
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT, content={"detail": exc.message}
+    )
 
 
 @app.exception_handler(DomainError)
 async def domain_error_handler(request: Request, exc: DomainError):
-    return JSONResponse(status_code=400, content={"detail": exc.message})
+    logger.error(
+        exc.code,
+        method=request.method,
+        url=str(request.url),
+        error_type="DomainError",
+        error_message=exc.message,
+        exc_info=True,  # This prints the full Python traceback to your console
+    )
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST, content={"detail": exc.message}
+    )
+
+
+@app.exception_handler(ValidationError)
+async def validation_error_handler(request: Request, exc: ValidationError):
+    logger.error(
+        exc.code,
+        method=request.method,
+        url=str(request.url),
+        error_type="ValidationError",
+        error_message=exc.message,
+        exc_info=True,  # This prints the full Python traceback to your console
+    )
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST, content={"detail": exc.message}
+    )
+
+
+@app.exception_handler(Exception)
+async def global_unhandled_exception_handler(request: Request, exc: Exception):
+    # Log the exact line of code that crashed with the Request ID attached
+    logger.error(
+        "unhandled_exception",
+        method=request.method,
+        url=str(request.url),
+        error_type=type(exc).__name__,
+        error_message=str(exc),
+        exc_info=True,  # This prints the full Python traceback to your console
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected internal server error occurred."},
+    )
 
 
 admin = Admin(
@@ -134,8 +235,18 @@ def root():
 
 
 @app.get("/health")
-def health_check():
-    return {"status": "ok"}
+async def health_check():
+    try:
+        async with AsyncSessionLocal() as db:
+            # Actually ping the database
+            await db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        # If DB is down, return 503 so load balancers pull this instance out
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "database": "disconnected", "detail": str(e)},
+        )
 
 
 # 3. Main execution block to run the app using Uvicorn

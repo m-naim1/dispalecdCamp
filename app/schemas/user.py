@@ -1,4 +1,7 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from datetime import date
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
 from app.models.enums import UserRole
 
 
@@ -15,7 +18,6 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    username: str | None = None
     email: EmailStr | None = None
     full_name: str | None = None
     role: UserRole | None = None
@@ -37,3 +39,8 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: str | None = None
     role: UserRole | None = None
+
+
+class FamilyLoginSchema(BaseModel):
+    national_id: int
+    date_of_birth: date

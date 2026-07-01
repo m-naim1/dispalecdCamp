@@ -1,11 +1,13 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Integer, String, Boolean, DateTime, Enum, ForeignKey
-from sqlalchemy.orm import relationship, Mapped, mapped_column, validates
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.sql import func
+
 from app.db.session import Base
 from app.models.enums import UserRole
-from app.models.lookups import ShelterBlock
+from app.models.lookups import ShelterBlock, ShelterCenter
 
 
 class User(Base):
@@ -23,10 +25,13 @@ class User(Base):
     )
     # Scope Fields
     # Which block does this user manage? (Only for blockHead)
-    block_id: Mapped[Optional[int]] = mapped_column(
+    block_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("shelter_block.id"), nullable=True, index=True
     )
-
+    # which camp this user mange? (only for manager)
+    shelter_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("shelter_centers.id"), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -36,26 +41,25 @@ class User(Base):
     block: Mapped[Optional["ShelterBlock"]] = relationship(
         "ShelterBlock", foreign_keys=[block_id], uselist=False
     )
+    shelter: Mapped[Optional["ShelterCenter"]] = relationship(
+        "ShelterCenter", foreign_keys=[shelter_id], uselist=False
+    )
 
     @validates("role")
     def validate_scope(self, key, role):
         if role == UserRole.BLOCK_HEAD and self.block_id is None:
-            raise ValueError("BLOCK_HEAD users must have a block_id assigned")
+            raise ValueError("BLOCK_HEAD users must have a block assigned")
         if role in (UserRole.SUPERADMIN, UserRole.MANAGER):
             if self.block_id is not None:
                 raise ValueError(
-                    "SUPERADMIN and MANAGER users should not have a scope assigned"
+                    "SUPERADMIN and MANAGER users should not have a block assigned"
                 )
+        if role == UserRole.MANAGER and self.shelter_id is None:
+            raise ValueError("MANAGER users must have a shelter assigned")
+        if role in (UserRole.SUPERADMIN, UserRole.BLOCK_HEAD):
+            if self.shelter_id is not None:
+                raise ValueError(
+                    "SUPERADMIN and MANAGER users should not have a shelter assigned"
+                )
+
         return role
-
-
-class BlockHeadPermission(Base):
-    __tablename__ = "block_head_permissions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), unique=True, nullable=False, index=True
-    )
-    can_edit: Mapped[bool] = mapped_column(default=False)
-    can_add: Mapped[bool] = mapped_column(default=False)
-    can_delete: Mapped[bool] = mapped_column(default=False)

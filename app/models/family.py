@@ -1,5 +1,4 @@
 from datetime import date
-from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -33,10 +32,10 @@ class Family(Base):
         Integer, primary_key=True, index=True, autoincrement=True
     )
 
-    head_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("members.id"), unique=True, index=True
+    head_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("members.id"), unique=True, index=True, nullable=True
     )
-    spouse_id: Mapped[Optional[int]] = mapped_column(
+    spouse_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("members.id"), unique=False, nullable=True, index=True
     )
 
@@ -48,15 +47,10 @@ class Family(Base):
     primary_phone_number: Mapped[str] = mapped_column(String, nullable=False)
     secondary_phone_number: Mapped[str] = mapped_column(String, nullable=True)
 
-    original_governor_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("governors.id"), nullable=False
-    )
     original_city_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("cities.id"), nullable=False
     )
-    current_governor_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("governors.id"), nullable=False
-    )
+
     current_city_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("cities.id"), nullable=False
     )
@@ -82,12 +76,12 @@ class Family(Base):
     created_at: Mapped[date] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    archived_at: Mapped[date] = mapped_column(
+    archived_at: Mapped[date | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )  # Date they left
 
     # --- Relationships ---
-    members: Mapped[List["Member"]] = relationship(
+    members: Mapped[list["Member"]] = relationship(
         "Member",
         back_populates="family",
         foreign_keys="[Member.family_id]",
@@ -101,9 +95,7 @@ class Family(Base):
     )
 
     original_city: Mapped[City] = relationship(foreign_keys=[original_city_id])
-    current_governor: Mapped[Governor] = relationship(
-        foreign_keys=[current_governor_id]
-    )
+
     current_city: Mapped[City] = relationship(foreign_keys=[current_city_id])
     current_shelter_center: Mapped[ShelterCenter] = relationship(
         foreign_keys=[current_shelter_center_id]
@@ -116,7 +108,9 @@ class Family(Base):
 
 class Member(Base):
     __tablename__ = "members"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(
+        Integer, primary_key=True, index=True, autoincrement=False
+    )
     family_id: Mapped[int] = mapped_column(Integer, ForeignKey("families.id"))
     full_name: Mapped[str] = mapped_column(String)
     gender: Mapped[Gender] = mapped_column(Enum(Gender, native_enum=False))

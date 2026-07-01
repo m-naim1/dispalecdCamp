@@ -1,24 +1,24 @@
 import asyncio
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from app.models.update_request import UpdateRequest  # noqa: F401
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.security import get_password_hash
 from app.db.session import Base
+from app.models.enums import UserRole
 from app.models.family import Family, Member  # noqa: F401
-from app.models.user import User, BlockHeadPermission  # noqa: F401
-from app.models.update_request import UpdateRequest  # noqa: F401
 from app.models.lookups import (  # noqa: F401
-    Governor,
     City,
+    Governor,
     RelationshipToHead,
-    ShelterQuality,
     ShelterBlock,
     ShelterCenter,
+    ShelterQuality,
 )
-from app.models.enums import UserRole
+from app.models.user import BlockHeadPermission, User  # noqa: F401
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -45,7 +45,7 @@ async def setup_db():
 
 
 @pytest_asyncio.fixture
-async def db() -> AsyncGenerator[AsyncSession, None]:
+async def db() -> AsyncGenerator[AsyncSession]:
     async with TestAsyncSessionLocal() as session:
         yield session
 

@@ -1,12 +1,11 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError, ConflictError
+from app.core.errors import ConflictError, NotFoundError
+from app.core.security import verify_password
 from app.models.enums import UserRole
 from app.schemas.user import UserCreate, UserUpdate
 from app.services import user_service
-from app.core.security import verify_password
-
 
 pytestmark = pytest.mark.asyncio
 

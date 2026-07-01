@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import block_head_service
 
-
 pytestmark = pytest.mark.asyncio
 
 

@@ -1,22 +1,18 @@
-from sqlalchemy import select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError, ConflictError
+from app.core.errors import ConflictError, NotFoundError
 from app.models.family import Member
-from app.schemas.family import MemberCreate, MemberResponse, MemberUpdate
 from app.repositories.base import IMemberRepository
+from app.schemas.family import MemberCreate, MemberUpdate
 
 
 class MemberRepository(IMemberRepository):
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
 
-    async def _get_member(self, id: int) -> Member | None:
-        result = await self.db.execute(select(Member).where(Member.id == id))
-        return result.scalar_one_or_none()
-
-    async def create(self, family_id: int, member: MemberCreate) -> MemberResponse:
-        mem = await self._get_member(member.id)
+    async def create(self, family_id: int, member: MemberCreate) -> Member:
+        mem = await self.get_by_id(member.id)
         if mem:
             raise ConflictError(
                 code="member_already_exists",
@@ -27,54 +23,57 @@ class MemberRepository(IMemberRepository):
         self.db.add(new_member)
         await self.db.flush()
         await self.db.refresh(new_member)
-        return MemberResponse.model_validate(new_member)
+        return new_member
 
-    async def delete(self, memberId: int) -> MemberResponse:
-        member = await self._get_member(memberId)
+    async def delete(self, member_id: int) -> Member:
+        member = await self.get_by_id(member_id)
         if member:
             await self.db.delete(member)
             await self.db.commit()
-            return MemberResponse.model_validate(member)
+            return member
         raise NotFoundError(
-            code="Member_not_Found", message=f"Member with id {memberId} not found"
+            code="Member_not_Found", message=f"Member with id {member_id} not found"
         )
 
-    async def get_by_id(self, memberId: int) -> MemberResponse | None:
-        member = member = await self._get_member(memberId)
-        if member:
-            return MemberResponse.model_validate(member)
-        return None
-    async def get_all(self) -> list[MemberResponse]:
-        result = await self.db.execute(select(Member))
-        return [MemberResponse.model_validate(member) for member in  result.all()]
-    
-    async def get_by_name(self, memberName: str) -> list[MemberResponse] | None:
+    async def get_by_id(self, member_id: int) -> Member | None:
+        result = await self.db.execute(select(Member).where(Member.id == member_id))
+        return result.scalar_one_or_none()
+
+    async def get_all(self, skip: int = 0, limit: int = 25) -> list[Member]:
         result = await self.db.execute(
-            select(Member).where(Member.full_name.like(f"%{memberName}%"))
+            select(Member).order_by(Member.id.desc()).offset(skip).limit(limit)
         )
-        members = result.all()
+        return list(result.scalars().all())
+
+    async def get_by_name(
+        self, member_name: str, limit: int = 10
+    ) -> list[Member] | None:
+        result = await self.db.execute(
+            select(Member).where(
+                Member.full_name.ilike(f"%{member_name}%")
+                .order_by(func.similarity(Member.full_name, member_name).desc())
+                .limit(limit)
+            )
+        )
+        members = result.scalars().all()
         if members:
-            return [MemberResponse.model_validate(member) for member in members]
+            return list(members)
         return None
 
-    async def update_member(
-        self, memberId: int, member_data: MemberUpdate
-    ) -> MemberResponse:
-        member = await self._get_member(memberId)
+    async def update(self, member_id: int, member_data: MemberUpdate) -> Member:
+        member = await self.get_by_id(member_id)
         if not member:
             raise NotFoundError(
-                code="Member_not_Found", message=f"Member with id {memberId} not found"
+                code="Member_not_Found", message=f"Member with id {member_id} not found"
             )
-        # for key, value in member_data.model_dump(exclude_unset=True).items():
-        #     setattr(member,key,value)
-        await self.db.execute(
-            update(Member)
-            .where(Member.id == memberId)
-            .values(member_data.model_dump(exclude_unset=True))
-        )
-        await self.db.flush()
+        for key, value in member_data.model_dump(exclude_unset=True).items():
+            setattr(member, key, value)
+        await self.db.commit()
         await self.db.refresh(member)
-        return MemberResponse.model_validate(member)
+        return member
 
     async def commit(self):
         await self.db.commit()
+
+    async def rollback(self):
+        await self.db.rollback()

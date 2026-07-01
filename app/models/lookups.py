@@ -1,4 +1,3 @@
-from typing import List
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,7 +25,7 @@ class ShelterQuality(LookupBase):
 
 class Governor(LookupBase):
     __tablename__ = "governors"
-    cities: Mapped[List["City"]] = relationship(back_populates="governor")
+    cities: Mapped[list["City"]] = relationship(back_populates="governor")
 
 
 class City(LookupBase):
@@ -35,7 +34,7 @@ class City(LookupBase):
         Integer, ForeignKey("governors.id"), nullable=False
     )
     governor: Mapped["Governor"] = relationship(back_populates="cities")
-    shelter_centers: Mapped[List["ShelterCenter"]] = relationship(back_populates="city")
+    shelter_centers: Mapped[list["ShelterCenter"]] = relationship(back_populates="city")
 
 
 class ShelterCenter(LookupBase):
@@ -44,7 +43,7 @@ class ShelterCenter(LookupBase):
         Integer, ForeignKey("cities.id"), nullable=False
     )
     city: Mapped["City"] = relationship(back_populates="shelter_centers")
-    shelter_blocks: Mapped[List["ShelterBlock"]] = relationship(
+    shelter_blocks: Mapped[list["ShelterBlock"]] = relationship(
         back_populates="shelter_center"
     )
 

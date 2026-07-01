@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from app.api.deps import require_role, get_family_service, get_member_service
-from app.core.errors import ConflictError, NotFoundError, DomainError, ValidationError
+from fastapi import APIRouter, Depends, status
+
+from app.api.deps import get_family_service, get_member_service, require_role
 from app.models.enums import UserRole
 from app.schemas.family import (
     FamilyCreate,
+    FamilyListResponse,
     FamilyResponse,
     FamilyUpdate,
     MemberCreate,
@@ -26,14 +27,7 @@ async def create_new_family(
     - Validates IDs using Luhn algorithm.
     - Prevents duplicate members.
     """
-    try:
-        family = await family_service.create_family(family_in=family_in)
-    except ConflictError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=e.message,
-        )
-    return family
+    return await family_service.create_family(family_in=family_in)
 
 
 @router.get("/{family_id}", response_model=FamilyResponse)
@@ -51,18 +45,16 @@ async def read_family(
     """
     Get a specific family by ID to see the calculated stats and members.
     """
-    try:
-        family = await family_service.get_family(family_id=family_id)
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    return family
+    return await family_service.get_family(family_id=family_id)
 
 
-@router.get("/", response_model=list[FamilyResponse])
+@router.get("/", response_model=list[FamilyListResponse])
 async def read_families(
-    skip: int = 0,
+    page: int = 1,
     limit: int = 100,
     active_only: bool = True,
+    head_name:str = "",
+    
     family_service: FamilyService = Depends(get_family_service),
     _=Depends(require_role(UserRole.SUPERADMIN, UserRole.MANAGER, UserRole.BLOCK_HEAD)),
 ):
@@ -72,7 +64,7 @@ async def read_families(
     Set active_only=False to see everyone (including archived).
     """
     return await family_service.get_families(
-        skip=skip, limit=limit, active=active_only
+        skip=(page - 1) * limit, limit=limit, active=active_only, head_name=head_name
     )
 
 
@@ -86,14 +78,9 @@ async def update_family_details(
     """
     Update family-level details (Housing, Phone, Status).
     """
-    try:
-        family = await family_service.update_family(
-             family_id=family_id, family_data=family_update
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-
-    return family
+    return await family_service.update_family(
+        family_id=family_id, family_data=family_update
+    )
 
 
 @router.patch("/{family_id}/archive", response_model=FamilyResponse)
@@ -106,16 +93,7 @@ async def archive_family(
     Soft delete (archive) a family.
     Sets is_active = False and records the archived_at timestamp.
     """
-    try:
-        family = await family_service.deactivate_family(
-            family_id=family_id
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except DomainError as e:
-        raise HTTPException(status_code=400, detail=e.message)
-
-    return family
+    return await family_service.deactivate_family(family_id=family_id)
 
 
 @router.patch("/{family_id}/restore", response_model=FamilyResponse)
@@ -127,15 +105,7 @@ async def restore_family(
     """
     Restore an archived family back to active status.
     """
-    try:
-        family = await family_service.activate_family(
-            family_id=family_id
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except DomainError as e:
-        raise HTTPException(status_code=400, detail=e.message)
-    return family
+    return await family_service.activate_family(family_id=family_id)
 
 
 @router.post("/{family_id}/members", response_model=MemberResponse)
@@ -149,15 +119,7 @@ async def add_member_to_family(
     Add a new member to an existing family.
     Automatically recalculates family statistics.
     """
-    try:
-        new_member = await member_service.add_member( family_id=family_id, member_in=member_in
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except ConflictError as e:
-        raise HTTPException(status_code=400, detail=e.message)
-
-    return new_member
+    return await member_service.add_member(family_id=family_id, member_in=member_in)
 
 
 @router.put("/members/{member_id}", response_model=MemberResponse)
@@ -171,15 +133,9 @@ async def update_member(
     Update a specific member's details (e.g., pregnancy status, injury).
     Automatically recalculates family statistics.
     """
-    try:
-        updated_member = await member_service.update_member(
-             member_id=member_id, member_in=member_update
-        )
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=e.message)
-    return updated_member
+    return await member_service.update_member(
+        member_id=member_id, member_in=member_update
+    )
 
 
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -192,9 +148,4 @@ async def remove_member(
     Permanently remove a member from the family.
     Automatically recalculates family statistics.
     """
-    try:
-        await member_service.delete_member( member_id=member_id)
-    except NotFoundError as e:
-        raise HTTPException(status_code=404, detail=e.message)
-
-    return None
+    await member_service.delete_member(member_id=member_id)

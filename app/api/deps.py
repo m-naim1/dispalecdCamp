@@ -1,35 +1,42 @@
-from app.repositories.familyRepository import FamilyRepository
-from tkinter.font import families
+from collections.abc import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import AsyncGenerator
-from sqlalchemy import select
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from app.db.session import AsyncSessionLocal
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.security import decode_access_token
-from app.models.user import User
+from app.db.session import AsyncSessionLocal
 from app.models.enums import UserRole
+from app.models.user import User
 from app.repositories.familyRepository import FamilyRepository
 from app.repositories.MemberRepository import MemberRepository
+from app.repositories.userrepository import UserRepository
 from app.services.family_service import FamilyService, MemberService
+from app.services.user_service import UserService
 
 oauth2_schema = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_db() -> AsyncGenerator[AsyncSession]:
     async with AsyncSessionLocal() as db:
         yield db
+
 
 async def get_family_service(db: AsyncSession = Depends(get_db)):
     familyRepo = FamilyRepository(db)
     memberRepo = MemberRepository(db)
-    return FamilyService(familyRepository=familyRepo,memberRepository=memberRepo)
-    
+    return FamilyService(family_repository=familyRepo, member_repository=memberRepo)
+
+
 async def get_member_service(db: AsyncSession = Depends(get_db)):
     memberRepo = MemberRepository(db)
     return MemberService(memberRepo)
-    
+
+
+async def get_user_service(db: AsyncSession = Depends(get_db)):
+    userRepo = UserRepository(db)
+    return UserService(userRepo)
 
 
 async def get_current_user(

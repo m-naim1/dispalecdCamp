@@ -1,10 +1,9 @@
 import pytest
+from app.schemas.update_request import UpdateRequestCreate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
-from app.schemas.update_request import UpdateRequestCreate
 from app.services import update_request_service
-
 
 pytestmark = pytest.mark.asyncio
 

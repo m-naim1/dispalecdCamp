@@ -1,5 +1,6 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
+
 from app.core.config import settings
 
 # 1. Create the SQLAlchemy Engine
@@ -7,9 +8,9 @@ from app.core.config import settings
 # Remove it if you switch to PostgreSQL/MySQL.
 engine = create_async_engine(
     settings.SQLALCHEMY_DATABASE_URI,
-    connect_args={"check_same_thread": False}
-    if "sqlite" in settings.SQLALCHEMY_DATABASE_URI
-    else {},
+    # connect_args={"check_same_thread": False}
+    # if "sqlite" in settings.SQLALCHEMY_DATABASE_URI
+    # else {},
 )
 
 AsyncSessionLocal = async_sessionmaker(bind=engine, expire_on_commit=False)
