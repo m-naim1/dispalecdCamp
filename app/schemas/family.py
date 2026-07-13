@@ -2,7 +2,13 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.models.enums import Gender, HousingType, MaritalStatus, ResidencyStatus
+from app.models.enums import (
+    Gender,
+    HousingType,
+    MaritalStatus,
+    ResidencyStatus,
+    UpdateRequestType,
+)
 
 
 # --- Helper: Luhn Algorithm Validator ---
@@ -120,12 +126,9 @@ class FamilyBase(BaseModel):
     residency_status: ResidencyStatus
     housing_type: HousingType
 
-    original_governor_id: int
     original_city_id: int
-    current_governor_id: int
-    current_city_id: int
     current_shelter_center_id: int
-    shelter_block_id: int
+    shelter_block_id: int | None
     shelter_quality_id: int | None = None
     # --- Validators ---
 
@@ -168,7 +171,8 @@ class FamilyResponse(FamilyBase):
     is_active: bool
     created_at: datetime
     archived_at: datetime | None = None
-
+    head: MemberResponse
+    spouse: MemberResponse | None = None
     members: list[MemberResponse]
 
     model_config = ConfigDict(from_attributes=True)
@@ -181,8 +185,6 @@ class FamilyListResponse(FamilyBase):
     is_active: bool
     created_at: datetime
     archived_at: datetime | None = None
-
-    # Notice: NO `members` field here! Pydantic will now completely ignore it.
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -203,3 +205,8 @@ class FamilyUpdate(BaseModel):
     shelter_block_id: int | None = None
     shelter_quality_id: int | None = None
     members: list[MemberUpdate] | None = None
+
+
+class UpdateRequestCreate(BaseModel):
+    request_type: UpdateRequestType
+    payload: dict

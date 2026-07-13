@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, families, users
+from app.api.v1.endpoints import auth, families, lookups, users
 
 api_router = APIRouter()
 
@@ -12,3 +12,5 @@ api_router.include_router(families.router, prefix="/families", tags=["families"]
 # This means the URL will be: /api/v1/auth
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(users.router, prefix="/users", tags=["users"])
+
+api_router.include_router(lookups.router, prefix="/lookups", tags=["lookups"])

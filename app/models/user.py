@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -38,10 +37,10 @@ class User(Base):
     )
 
     # Relationships
-    block: Mapped[Optional["ShelterBlock"]] = relationship(
-        "ShelterBlock", foreign_keys=[block_id], uselist=False
+    block: Mapped[ShelterBlock | None] = relationship(
+        "ShelterBlock", foreign_keys=[block_id], uselist=False, lazy="joined"
     )
-    shelter: Mapped[Optional["ShelterCenter"]] = relationship(
+    shelter: Mapped[ShelterCenter | None] = relationship(
         "ShelterCenter", foreign_keys=[shelter_id], uselist=False
     )
 

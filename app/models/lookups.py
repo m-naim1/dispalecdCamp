@@ -1,4 +1,3 @@
-
 from sqlalchemy import Boolean, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,7 +24,7 @@ class ShelterQuality(LookupBase):
 
 class Governor(LookupBase):
     __tablename__ = "governors"
-    cities: Mapped[list["City"]] = relationship(back_populates="governor")
+    cities: Mapped[list[City]] = relationship(back_populates="governor")
 
 
 class City(LookupBase):
@@ -33,8 +32,8 @@ class City(LookupBase):
     governor_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("governors.id"), nullable=False
     )
-    governor: Mapped["Governor"] = relationship(back_populates="cities")
-    shelter_centers: Mapped[list["ShelterCenter"]] = relationship(back_populates="city")
+    governor: Mapped[Governor] = relationship(back_populates="cities")
+    shelter_centers: Mapped[list[ShelterCenter]] = relationship(back_populates="city")
 
 
 class ShelterCenter(LookupBase):
@@ -42,8 +41,8 @@ class ShelterCenter(LookupBase):
     city_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("cities.id"), nullable=False
     )
-    city: Mapped["City"] = relationship(back_populates="shelter_centers")
-    shelter_blocks: Mapped[list["ShelterBlock"]] = relationship(
+    city: Mapped[City] = relationship(back_populates="shelter_centers")
+    shelter_blocks: Mapped[list[ShelterBlock]] = relationship(
         back_populates="shelter_center"
     )
 
@@ -53,6 +52,6 @@ class ShelterBlock(LookupBase):
     shelter_center_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("shelter_centers.id"), nullable=False
     )
-    shelter_center: Mapped["ShelterCenter"] = relationship(
+    shelter_center: Mapped[ShelterCenter] = relationship(
         back_populates="shelter_blocks"
     )

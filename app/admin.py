@@ -40,7 +40,7 @@ class AdminAuthProvider(AuthProvider):
         if not await verify_password(password, user.hashed_password):
             raise LoginFailed("Invalid username or password")
 
-        if user.role not in (UserRole.SUPERADMIN, UserRole.MANAGER):
+        if user.role != UserRole.SUPERADMIN:
             raise LoginFailed("You do not have permission to access the admin panel")
 
         request.session.update(

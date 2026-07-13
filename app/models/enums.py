@@ -35,3 +35,16 @@ class HousingType(StrEnum):
     ROOM = "room"
     SCHOOL = "school"
     OTHER = "other"
+
+
+class UpdateRequestType(StrEnum):
+    ADD_MEMBER = "ADD_MEMBER"
+    CHANGE_HEAD = "CHANGE_HEAD"
+    UPDATE_FAMILY_INFO = "UPDATE_FAMILY_INFO"
+    UPDATE_MEMBER_INFO = "UPDATE_MEMBER_INFO"
+
+
+class UpdateRequestStatus(StrEnum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     ADMIN_USERNAME: str = ""
     ADMIN_PASSWORD: str = ""
+    ADMIN_EMAIL: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

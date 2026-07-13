@@ -33,7 +33,7 @@ if settings.SECRET_KEY == "change-me":
     import warnings
 
     warnings.warn(
-        "⚠️  SECRET_KEY is set to the default 'change-me'. "
+        "SECRET_KEY is set to the default 'change-me'. "
         "Set a strong random key in your .env file before deploying.",
         stacklevel=1,
     )

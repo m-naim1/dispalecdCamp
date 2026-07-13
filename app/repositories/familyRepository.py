@@ -2,12 +2,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, joinedload, selectinload
 
 from app.core.errors import ConflictError, NotFoundError
 from app.models.family import Family, Member
+from app.models.lookups import City
 from app.repositories.base import IFamilyRepository
 from app.schemas.family import FamilyCreate, FamilyUpdate
+from app.schemas.filters import FamilyFilterParams
 
 
 class FamilyRepository(IFamilyRepository):
@@ -31,14 +33,78 @@ class FamilyRepository(IFamilyRepository):
         await self.db.refresh(family)
         return family
 
-    async def get_all(self, skip=0, limit=20, is_active=True) -> list[Family]:
-        result = await self.db.execute(
-            select(Family)
-            .where(Family.is_active == is_active)
-            .order_by(Family.id)
-            .offset(skip)
-            .limit(limit)
-        )
+    async def get_all(
+        self, filters: FamilyFilterParams, skip: int = 0, limit: int = 100
+    ) -> list[Family]:
+        query = select(Family)
+
+        # Single-value filters (Equality)
+        if filters.is_active is not None:
+            query = query.where(Family.is_active == filters.is_active)
+        if filters.residency_status:
+            query = query.where(Family.residency_status == filters.residency_status)
+        if filters.female_headed is not None:
+            query = query.where(Family.female_headed == filters.female_headed)
+        if filters.child_headed is not None:
+            query = query.where(Family.child_headed == filters.child_headed)
+
+        # --- MULTI-VALUE FILTERS (.in_) ---
+        if filters.housing_type:
+            query = query.where(Family.housing_type.in_(filters.housing_type))
+        if filters.current_shelter_center_id:
+            query = query.where(
+                Family.current_shelter_center_id.in_(filters.current_shelter_center_id)
+            )
+        if filters.shelter_block_id:
+            query = query.where(Family.shelter_block_id.in_(filters.shelter_block_id))
+        if filters.current_city_id:
+            query = query.where(Family.current_city_id.in_(filters.current_city_id))
+        if filters.original_city_id:
+            query = query.where(Family.original_city_id.in_(filters.original_city_id))
+        if filters.shelter_quality_id:
+            query = query.where(
+                Family.shelter_quality_id.in_(filters.shelter_quality_id)
+            )
+
+        # --- GOVERNOR FILTERS (Requires joining City table) ---
+        if filters.current_governor_id or filters.original_governor_id:
+            CurrentCity = aliased(City)
+            OriginalCity = aliased(City)
+
+            if filters.current_governor_id:
+                query = query.join(
+                    CurrentCity, Family.current_city_id == CurrentCity.id
+                ).where(CurrentCity.governor_id.in_(filters.current_governor_id))
+            if filters.original_governor_id:
+                query = query.join(
+                    OriginalCity, Family.original_city_id == OriginalCity.id
+                ).where(OriginalCity.governor_id.in_(filters.original_governor_id))
+
+        # Text search filters
+        if filters.phone_number:
+            query = query.where(
+                Family.primary_phone_number.ilike(f"%{filters.phone_number}%")
+            )
+
+        if filters.head_name:
+            query = (
+                query.join(Member, Family.head_id == Member.id)
+                .where(Member.full_name.ilike(f"%{filters.head_name}%"))
+                .order_by(func.similarity(Member.full_name, filters.head_name).desc())
+            )
+
+        # Dynamic Sorting
+        sort_by_field = filters.sort_by or "id"
+        sort_column = getattr(Family, sort_by_field, Family.id)
+
+        if filters.sort_order == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+
+        query = query.offset(skip).limit(limit)
+
+        result = await self.db.execute(query)
         return list(result.scalars().all())
 
     async def get_by_head_id(self, head_id: int) -> Family | None:
@@ -48,34 +114,15 @@ class FamilyRepository(IFamilyRepository):
             return None
         return family
 
-    async def get_by_head_name(
-        self,
-        head_name: str,
-        skip: int = 0,
-        limit: int = 20,
-        active: bool = True,
-    ) -> list[Family]:
-
-        query = select(Family).join(Member, Family.head_id == Member.id)
-        if active:
-            query = query.where(Family.is_active == active)
-        query = (
-            (
-                query.where(Member.full_name.ilike(f"%{head_name}%")).order_by(
-                    func.similarity(Member.full_name, head_name).desc()
-                )
-            ).offset((skip - 1) * limit)
-        ).limit(limit)
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
     async def get_by_family_id(self, family_id: int) -> Family | None:
         result = await self.db.execute(
             select(Family)
             .options(selectinload(Family.members))
+            .options(joinedload(Family.head))
+            .options(joinedload(Family.spouse))
             .where(Family.id == family_id)
         )
-        return result.scalar_one_or_none()
+        return result.unique().scalar_one_or_none()
 
     async def archive(self, family_id: int) -> Family:
         family = await self.get_by_family_id(family_id)

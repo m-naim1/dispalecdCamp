@@ -1,13 +1,16 @@
 from abc import ABC, abstractmethod
 
-from app.models.family import Family, Member
+from app.models.enums import UpdateRequestStatus, UpdateRequestType
+from app.models.family import Family, FamilyUpdateRequest, Member
 from app.models.user import User
 from app.schemas.family import (
     FamilyCreate,
     FamilyUpdate,
     MemberCreate,
     MemberUpdate,
+    UpdateRequestCreate,
 )
+from app.schemas.filters import FamilyFilterParams, MemberFilterParams
 from app.schemas.user import UserCreate, UserUpdate
 
 
@@ -17,15 +20,13 @@ class IFamilyRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_all(self, skip: int, limit: int, is_active: bool) -> list[Family]:
+    async def get_all(
+        self, filters: FamilyFilterParams, skip: int = 0, limit: int = 100
+    ) -> list[Family]:
         pass
 
     @abstractmethod
     async def get_by_head_id(self, head_id: int) -> Family | None:
-        pass
-
-    @abstractmethod
-    async def get_by_head_name(self, head_name: str,skip: int = 0, limit: int = 100, active: bool = True) -> list[Family]:
         pass
 
     @abstractmethod
@@ -55,11 +56,19 @@ class IFamilyRepository(ABC):
 
 class IMemberRepository(ABC):
     @abstractmethod
+    async def create_many(
+        self, family_id: int, members: list[MemberCreate]
+    ) -> list[Member]:
+        pass
+
+    @abstractmethod
     async def create(self, family_id: int, member: MemberCreate) -> Member:
         pass
 
     @abstractmethod
-    async def get_all(self) -> list[Member]:
+    async def get_all(
+        self, filters: MemberFilterParams, skip: int = 0, limit: int = 100
+    ) -> list[Member]:
         pass
 
     @abstractmethod
@@ -120,4 +129,35 @@ class IUserRepository(ABC):
 
     @abstractmethod
     async def check_username_and_email(self, username: str, email: str):
+        pass
+
+
+class IFamilyUpdateRequestRepository(ABC):
+    @abstractmethod
+    async def create(
+        self, family_id: int, update_request: UpdateRequestCreate
+    ) -> FamilyUpdateRequest:
+        pass
+
+    @abstractmethod
+    async def get_all(
+        self,
+        shelter_center_id: int | None = None,
+        block_id: int | None = None,
+        family_id: int | None = None,
+        request_status: UpdateRequestStatus = UpdateRequestStatus.PENDING,
+        request_type: UpdateRequestType | None = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> list[FamilyUpdateRequest]:
+        pass
+
+    @abstractmethod
+    async def get_by_id(self, update_request_id: int) -> FamilyUpdateRequest | None:
+        pass
+
+    @abstractmethod
+    async def update(
+        self, update_request_id: int, status: UpdateRequestStatus, user_reviewer_id: int
+    ) -> FamilyUpdateRequest:
         pass

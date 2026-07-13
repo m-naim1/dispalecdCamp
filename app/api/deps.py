@@ -11,8 +11,10 @@ from app.models.enums import UserRole
 from app.models.user import User
 from app.repositories.familyRepository import FamilyRepository
 from app.repositories.MemberRepository import MemberRepository
+from app.repositories.updateRequestRepository import FamilyUpdateRequestRepository
 from app.repositories.userrepository import UserRepository
 from app.services.family_service import FamilyService, MemberService
+from app.services.update_request_service import UpdateRequestService
 from app.services.user_service import UserService
 
 oauth2_schema = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -24,19 +26,26 @@ async def get_db() -> AsyncGenerator[AsyncSession]:
 
 
 async def get_family_service(db: AsyncSession = Depends(get_db)):
-    familyRepo = FamilyRepository(db)
-    memberRepo = MemberRepository(db)
-    return FamilyService(family_repository=familyRepo, member_repository=memberRepo)
+    return FamilyService(
+        FamilyRepository(db),
+        MemberRepository(db),
+    )
 
 
 async def get_member_service(db: AsyncSession = Depends(get_db)):
-    memberRepo = MemberRepository(db)
-    return MemberService(memberRepo)
+    return MemberService(MemberRepository(db), FamilyRepository(db))
 
 
 async def get_user_service(db: AsyncSession = Depends(get_db)):
-    userRepo = UserRepository(db)
-    return UserService(userRepo)
+    return UserService(UserRepository(db))
+
+
+async def get_update_request_service(db: AsyncSession = Depends(get_db)):
+    return UpdateRequestService(
+        update_request_repo=FamilyUpdateRequestRepository(db),
+        family_repo=FamilyRepository(db),
+        member_repo=MemberRepository(db),
+    )
 
 
 async def get_current_user(

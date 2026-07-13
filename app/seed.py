@@ -2,6 +2,7 @@ import asyncio
 
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.session import AsyncSessionLocal, Base, engine
 from app.models.enums import UserRole
@@ -411,10 +412,10 @@ async def seed_all():
         )
 
         # Seed Superadmin
-        hashed_pw = await get_password_hash("admin1234")
+        hashed_pw = await get_password_hash(settings.ADMIN_PASSWORD)
         admin_data = {
-            "username": "admin",
-            "email": "admin@camp.local",
+            "username": settings.ADMIN_PASSWORD,
+            "email": settings.ADMIN_EMAIL,
             "full_name": "System Admin",
             "hashed_password": hashed_pw,
             "role": UserRole.SUPERADMIN,
