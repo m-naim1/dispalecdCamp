@@ -48,7 +48,7 @@ async def family_login(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
 
-    family = await family_service.get_family(head.family_id)
+    family = await family_service.get_family(head.family_id, current_user=None)
     if family.head_id != head.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -258,7 +258,7 @@ class MemberService:
         member = await self.get_member(member_id, current_user)
         await self.member_repo.delete(member_id)
 
-    async def get_member(self, member_id: int, current_user: User) -> Member:
+    async def get_member(self, member_id: int, current_user: User | None = None) -> Member:
         """
         Retrieves a member by their ID.
         """
@@ -268,7 +268,8 @@ class MemberService:
                 code="Member_not_Found", message=f"Member with id {member_id} not found"
             )
         family = await self._get_owning_family(member.family_id)
-        verify_family_scope(current_user, family)
+        if current_user:
+            verify_family_scope(current_user, family)
         return member
 
     async def get_members(

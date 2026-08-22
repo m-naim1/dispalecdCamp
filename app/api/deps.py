@@ -14,6 +14,7 @@ from app.repositories.MemberRepository import MemberRepository
 from app.repositories.updateRequestRepository import FamilyUpdateRequestRepository
 from app.repositories.userrepository import UserRepository
 from app.services.family_service import FamilyService, MemberService
+from app.services.report_service import ReportService
 from app.services.update_request_service import UpdateRequestService
 from app.services.user_service import UserService
 
@@ -45,6 +46,12 @@ async def get_update_request_service(db: AsyncSession = Depends(get_db)):
         update_request_repo=FamilyUpdateRequestRepository(db),
         family_repo=FamilyRepository(db),
         member_repo=MemberRepository(db),
+    )
+
+
+async def get_report_service(db: AsyncSession = Depends(get_db)):
+    return ReportService(
+        family_repo=FamilyRepository(db), member_repo=MemberRepository(db)
     )
 
 

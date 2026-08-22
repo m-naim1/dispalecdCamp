@@ -1,9 +1,10 @@
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import aliased, joinedload
 
 from app.core.errors import ConflictError, NotFoundError
 from app.models.family import Family, Member
+from app.models.lookups import RelationshipToHead, ShelterBlock, ShelterCenter
 from app.repositories.base import IMemberRepository
 from app.schemas.family import MemberCreate, MemberUpdate
 from app.schemas.filters import MemberFilterParams
@@ -166,6 +167,105 @@ class MemberRepository(IMemberRepository):
         await self.db.commit()
         await self.db.refresh(member)
         return member
+
+    async def get_members_report_data(
+        self,
+        shelter_center_id: int | None = None,
+        shelter_block_ids: list[int] | None = None,
+        special_only: bool = False,
+        selected_ids: list[int] | None = None,
+    ) -> list[dict]:
+        HeadMember = aliased(Member)
+        age_expr = func.date_part(
+            "year", func.age(func.current_date(), Member.date_of_birth)
+        )
+
+        # Reuse the logic to check if family has an adult
+        has_adult_subq = (
+            select(
+                Member.family_id,
+                func.max(
+                    case(
+                        (
+                            func.date_part(
+                                "year",
+                                func.age(func.current_date(), Member.date_of_birth),
+                            )
+                            >= 18,
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("has_adult"),
+            )
+            .group_by(Member.family_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                Member.id.label("member_id"),
+                Member.full_name.label("member_name"),
+                Member.id.label("member_id_number"),
+                Member.family_id,
+                HeadMember.full_name.label("family_head_name"),
+                Family.primary_phone_number.label("family_phone_1"),
+                age_expr.label("age"),
+                Member.date_of_birth.label("dob"),
+                Member.gender,
+                RelationshipToHead.name_en.label("relation"),
+                Member.marital_status,
+                ShelterCenter.name_en.label("site"),
+                ShelterBlock.name_en.label("block"),
+                Member.disabled,
+                Member.injured,
+                Member.has_chronic_disease.label("chronic_disease"),
+                Member.pregnant,
+                Member.breastfeeding,
+                case(
+                    (
+                        and_(
+                            age_expr < 18,
+                            func.coalesce(has_adult_subq.c.has_adult, 0) > 0,
+                        ),
+                        True,
+                    ),
+                    else_=False,
+                ).label("accompanied_child"),
+                Family.is_active.label("family_is_active"),
+                Family.created_at,
+                Family.archived_at.label("updated_at"),
+            )
+            .outerjoin(Family, Member.family_id == Family.id)
+            .outerjoin(HeadMember, Family.head_id == HeadMember.id)
+            .outerjoin(
+                ShelterCenter, Family.current_shelter_center_id == ShelterCenter.id
+            )
+            .outerjoin(ShelterBlock, Family.shelter_block_id == ShelterBlock.id)
+            .outerjoin(
+                RelationshipToHead,
+                Member.relationship_to_head_id == RelationshipToHead.id,
+            )
+            .outerjoin(has_adult_subq, Family.id == has_adult_subq.c.family_id)
+        )
+
+        if shelter_center_id:
+            stmt = stmt.where(Family.current_shelter_center_id == shelter_center_id)
+        if shelter_block_ids:
+            stmt = stmt.where(Family.shelter_block_id.in_(shelter_block_ids))
+        if selected_ids:
+            stmt = stmt.where(Member.id.in_(selected_ids))
+        if special_only:
+            stmt = stmt.where(
+                or_(
+                    Member.disabled == True,
+                    Member.injured == True,
+                    Member.has_chronic_disease == True,
+                )
+            )
+
+        result = await self.db.execute(stmt)
+        return [dict(row) for row in result.mappings().all()]
 
     async def commit(self):
         await self.db.commit()
